@@ -41,8 +41,29 @@ region and sea outlines, and `osmbase fetch` for the map the finer levels are re
 A name read from OpenStreetMap data owes its credit, which `summary` prints with every
 answer and writes into its JSON; see [NOTICE](NOTICE).
 
-`course map`, to draw the course over the map, is next. The plan, and why the work is
-split between this module, `osmbase` and `fitactivity`, is in
-[docs/plan.md](docs/plan.md).
+## The map
+
+```
+./course map run.fit                 # -> run.png
+./course map --palette dark --width 1920 --height 1080 flight.kml
+```
+
+`map` draws the course over the map: the route, its start and finish, and a marker every
+so many kilometres where the file recorded distance. A stretch the recording has no fixes
+for -- a tunnel, a flight over an ocean -- is dashed, because the straight line across it is
+not where the course went. The picture carries the map data's credit in its corner.
+
+## Fetching what the store lacks
+
+Both commands check the store before they read it, and offer to fetch what is missing --
+which tells the archive's host where the course went, so it is never done without a yes,
+typed or given with `--yes`, and never asked where nobody can answer. The map fetches its
+view. The summary fetches only what its depth needs: the whole of a local course at street
+detail, and for a flight or a long drive just a few kilometres round each end, where the
+airports are; the rest is named from country and sea outlines. Declined, both carry on
+with what the store holds, and say what that cost.
+
+The plan, and why the work is split between this module, `osmbase` and `fitactivity`, is
+in [docs/plan.md](docs/plan.md).
 
 Licensed under the Apache License 2.0; see [LICENSE](LICENSE).

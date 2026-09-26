@@ -7,6 +7,7 @@ require (
 	github.com/wisborg/fitactivity v0.7.0
 	github.com/wisborg/osmbase v0.12.0
 	github.com/wisborg/output v0.3.0
+	golang.org/x/image v0.44.0
 )
 
 require (
@@ -16,5 +17,7 @@ require (
 	github.com/muktihari/fit v0.28.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/image v0.44.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 )
+
+replace github.com/wisborg/osmbase => ../osmbase

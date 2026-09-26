@@ -1,9 +1,7 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	iofs "io/fs"
 	"strings"
 
 	"github.com/wisborg/osmbase/boundary"
@@ -25,9 +23,8 @@ type store struct {
 // openStore opens the store at root, the default when empty, and the one
 // archive in it -- or the one archive names, when it holds several.
 //
-// A store with boundaries and no map opens; what it can answer is then the
-// levels the boundaries cover. One with neither is an error naming the
-// commands that fill it.
+// A store with no map, or none at all, opens with no tiles: the caller may
+// offer to fill it, and then uses empty.
 func openStore(root, archive string) (*store, error) {
 	if root == "" {
 		var err error
@@ -39,26 +36,17 @@ func openStore(root, archive string) (*store, error) {
 	if boundary.Available(root, boundary.DefaultDetail) {
 		s.boundaries = boundary.Open(root, boundary.DefaultDetail)
 	}
-	st, err := slice.Open(root)
-	switch {
-	case errors.Is(err, iofs.ErrNotExist) && s.boundaries != nil:
-		return s, nil
-	case errors.Is(err, iofs.ErrNotExist):
-		return nil, fmt.Errorf("there is no map data at %s; fill it with \"osmbase fetch\" and \"osmbase boundaries\"", root)
-	case err != nil:
-		return nil, fmt.Errorf("opening the store at %s: %w", root, err)
+	var err error
+	s.manifest, s.tiles, err = tilesIn(root, archive)
+	return s, err
+}
+
+// empty is the error for a store with nothing to answer from.
+func (s *store) empty() error {
+	if s.tiles == nil && s.boundaries == nil {
+		return fmt.Errorf("there is no map data at %s; fill it with \"osmbase fetch\" and \"osmbase boundaries\"", s.root)
 	}
-	sources, err := st.Sources()
-	if err != nil {
-		return nil, err
-	}
-	if s.manifest, err = chooseSource(root, sources, archive); err != nil {
-		return nil, err
-	}
-	if s.tiles, err = st.Source(s.manifest.ID); err != nil {
-		return nil, err
-	}
-	return s, nil
+	return nil
 }
 
 // tileSource is the tiles as locate takes them: nil, not a nil pointer in an

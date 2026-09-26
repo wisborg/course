@@ -163,6 +163,16 @@ which are kept out of the repository:
 - **Distance is not computed.** A course reports what its file recorded; a computed
   distance along the track may come later, as a deliberate addition.
 
+## The map, as built
+
+`course map` fits the view with osmbase's `render.Fit`, up to zoom 18 -- a lap of a park fitted
+at the public builds' 15 was a small loop in four kilometres of town -- and draws with
+`render.Draw` and `render.DrawCredit`, both moved into osmbase's library for it. What is drawn
+is `routemap`'s: the line thinned to a pixel, dashed across a gap five times the recording's
+own rhythm and a few hundred metres wide, and distance markers only where the file recorded
+distance, at the Python original's intervals. The fetch offer is shared with the summary,
+which asks only for what its depth needs -- a local course's area, a wide course's ends.
+
 ## Open questions
 
 - **The row limit** (`--max-rows`). 25 holds for runs of 5 km to a marathon and for long-haul

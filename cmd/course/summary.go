@@ -8,7 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/osmbase/fetch"
 	"github.com/wisborg/osmbase/locate"
+	"github.com/wisborg/osmbase/slice"
 	"github.com/wisborg/output"
 	"github.com/wisborg/output/table"
 
@@ -24,6 +26,7 @@ var summaryOpts struct {
 	archive  string
 	language string
 	prefix   string
+	yes      bool
 	format   formatFlag
 }
 
@@ -54,6 +57,7 @@ func init() {
 	f.StringVar(&summaryOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.StringVar(&summaryOpts.language, "lang", "", "prefer names in this language, e.g. en; default is the local spelling")
 	f.StringVar(&summaryOpts.prefix, "prefix", "city", "what the one line names ahead of its chain: city (the most prominent place in reach), locality (the locality level's answer), or none")
+	f.BoolVar(&summaryOpts.yes, "yes", false, "fetch the map the summary needs without asking")
 	summaryOpts.format = formatFlag{Format: output.Text}
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
 	root.AddCommand(summaryCmd)
@@ -98,6 +102,15 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	n, offered := summaryNeed(st, c, depth, auto)
+	if offered && offerToFill(cmd.Context(), cmd.ErrOrStderr(), n, summaryOpts.yes) {
+		if st, err = openStore(summaryOpts.store, summaryOpts.archive); err != nil {
+			return err
+		}
+	}
+	if err := st.empty(); err != nil {
+		return err
+	}
 	s, err := summary.Summarise(cmd.Context(), c, st.tileSource(), summary.Options{
 		Depth: depth, Auto: auto, MaxRows: summaryOpts.maxRows,
 		Language: summaryOpts.language, Boundaries: st.boundarySource(),
@@ -117,7 +130,12 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	}
 	credits := st.credits(all)
 
-	writeShortfall(cmd.ErrOrStderr(), st, s)
+	// The offer has already said what the store lacks, and a wide course
+	// needs only its ends: the note is for a local course nobody was asked
+	// about -- one whose store holds most of it, but not all.
+	if !offered && len(n.areas) <= 1 {
+		writeShortfall(cmd.ErrOrStderr(), st, s)
+	}
 
 	doc := output.Document{Data: jsonSummary(c, s, credits)}
 	out := cmd.OutOrStdout()
@@ -149,6 +167,67 @@ func writeShortfall(w io.Writer, st *store, s *summary.Summary) {
 	}
 	fmt.Fprintf(w, "course: %s holds too little of the map along this course to name %s.\n", st.root, strings.Join(parts, ", "))
 	fmt.Fprintf(w, "        Fill it with \"osmbase fetch --store %s\" over the course's area.\n", st.root)
+}
+
+// localSpan is how wide a course may be, in metres corner to corner, for its
+// whole area to be worth fetching at street detail: a run, a ride, a day's
+// walk. Wider is a drive or a flight, whose middle is named by country and
+// sea outlines and needs no map, and whose ends -- where it started and
+// finished, an airport -- are all that is fetched.
+const localSpan = 100_000.0
+
+// endReach is how far round each end of a wide course is fetched, in
+// degrees: an airport's worth.
+const endReach = 0.03
+
+// summaryNeed is the map a summary at depth needs, and whether the store
+// lacks it:
+// along the whole of a local course, at the ends of a wide one, at the zoom
+// the finest level asked for is read at. Levels the boundaries answer need
+// none.
+func summaryNeed(st *store, c *course.Course, depth locate.Level, auto bool) (need, bool) {
+	finest := depth
+	if auto {
+		finest = summary.Depths[len(summary.Depths)-1]
+	}
+	z, ok := finest.Zoom()
+	if !ok || len(c.Points) == 0 || (st.boundaries != nil && st.boundaries.Covers(finest)) {
+		return need{}, false
+	}
+	b := slice.Bounds{West: 180, South: 90, East: -180, North: -90}
+	for _, p := range c.Points {
+		b.West, b.East = min(b.West, p.Lon), max(b.East, p.Lon)
+		b.South, b.North = min(b.South, p.Lat), max(b.North, p.Lat)
+	}
+	n := need{root: st.root, archive: st.manifest.Source, zoom: z}
+	if course.Metres(b.South, b.West, b.North, b.East) <= localSpan {
+		const pad = 0.003
+		n.areas = []slice.Bounds{{West: b.West - pad, South: b.South - pad, East: b.East + pad, North: b.North + pad}}
+		n.why = "along this course, which a summary to " + finest.String() + " depth needs"
+	} else {
+		for _, p := range []course.Point{c.Points[0], c.Points[len(c.Points)-1]} {
+			n.areas = append(n.areas, slice.Bounds{West: p.Lon - endReach, South: p.Lat - endReach, East: p.Lon + endReach, North: p.Lat + endReach})
+		}
+		n.why = "round where this course started and finished, which a summary needs to name them"
+	}
+	if st.tiles == nil {
+		n.why = "a summary to " + finest.String() + " depth needs one"
+		return n, true
+	}
+	n.zoom = fetch.DrawnZoom(st.tiles, z)
+	for _, a := range n.areas {
+		held, wanted, err := st.tiles.HeldAt(a, n.zoom)
+		if err != nil {
+			return n, false
+		}
+		n.held, n.wanted = n.held+held, n.wanted+wanted
+	}
+	// The summary's own threshold for a depth it can choose: see
+	// summary.DefaultHeld.
+	if float64(n.held) >= summary.DefaultHeld*float64(n.wanted) {
+		return n, false
+	}
+	return n, true
 }
 
 func writeOneLiner(w io.Writer, s *summary.Summary, credits []string) {
