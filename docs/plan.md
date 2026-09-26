@@ -123,14 +123,43 @@ useful to fitdash too, which draws its own route over osmbase's basemap today. P
 follow the rule fitactivity's consumers set: each on its own branch, verified against both
 fitdash and videofx before it is done.
 
+## What was learned building the summary
+
+Measured on real courses -- runs from 5 km to a marathon, domestic and long-haul flights --
+which are kept out of the repository:
+
+- **Natural Earth's coastline is a kilometre out.** A marathon along a beachfront was in
+  Queensland, then nowhere, then Queensland, for twenty-five kilometres at a time. A gap in
+  country or region with no named water in it, and the same place either side, is bridged
+  -- as Near, never as Contained -- up to 50 km.
+- **Its seas reach onto the land by the same error**, so named water under a course for
+  less than a kilometre is not named: a run round a headland is not over the Tasman Sea.
+- **Flicker needs folding, scaled by depth.** A footpath beside a road alternates with the
+  road as the nearest street; a flight up the Scottish coast alternates between islands and
+  sounds every thirty seconds. A stretch shorter than a depth's minimum is folded into the
+  one before it, and a detour that returns to the same place is folded up to a larger one --
+  but a sea crossing between two parts of one country (the Great Belt, 18 km) is kept.
+- **A row is labelled by the land when it has any.** A coastal airport is in France and over
+  the Golfe du Lion; the flight departed France.
+- **An empty lookup cannot say why.** A run through a city the store holds no map of has no
+  street names, exactly like a run across open country, and "street" then looked like a
+  depth that fit. Auto now measures the tiles held along the course at each level's zoom
+  (osmbase's `Level.Zoom`) and chooses only among depths the store can answer.
+- **The budget holds at the widest depth too.** An archipelago is island, sea, island at
+  country depth; when even that is over the budget, the shortest stretches are folded until
+  it fits, never the start or the finish.
+- **Distance is not computed.** A course reports what its file recorded; a computed
+  distance along the track may come later, as a deliberate addition.
+
 ## Open questions
 
-- **The row budget.** 25 is a guess; measure it on a run, a ride, a drive and a flight.
-- **Part 3's representation.** A flag on `Track`, or a separate type. The flag is less code; the
-  separate type cannot be animated by accident.
-- **The fetch offer** — moved into osmbase's library for course and fitdash to share, or
-  repeated here. fitdash already has a third copy of the idea.
-- **Output formats.** Text and JSON at least; `github.com/wisborg/output` would give the rest,
-  at the cost of its dependencies, which this module can afford where osmbase could not.
+- **The row budget.** 25 holds for runs of 5 km to a marathon and for long-haul flights; a
+  ride and a drive have not been tried.
+- ~~**Part 3's representation.**~~ A separate type: `fitactivity.Route`, from `ReadRoute`;
+  `Read` refuses a file without times with `ErrNoTimes` (fitactivity v0.7.0).
+- ~~**The fetch offer.**~~ Moved into osmbase's library as `fetch.Consent` and `fetch.Fill`
+  (v0.11.0), and fitdash is on it. `summary` names what the store lacks; offering to fetch it
+  is part 8's, shared with the map.
+- ~~**Output formats.**~~ `github.com/wisborg/output`: text, CSV, JSON and YAML.
 - **Test data.** Synthetic courses for every test, as elsewhere. Real recordings — FIT files,
   `~/Source/gtrack`'s KML and KMZ — are for checking by hand and never enter a fixture.
