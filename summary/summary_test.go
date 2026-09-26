@@ -472,4 +472,16 @@ func TestPrefixIsTheOnePlaceTheCourseWasIn(t *testing.T) {
 	if s = summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixCity}); s.Prefix != "" {
 		t.Errorf("a course through two cities has city prefix %q", s.Prefix)
 	}
+
+	// A course that is nine tenths in one town and a tenth on top of a
+	// district's label is in the town.
+	w[locate.Locality] = func(lon float64) string {
+		if lon-20 < 0.0018 {
+			return "District"
+		}
+		return "Town"
+	}
+	if s = summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixLocality}); s.Prefix != "Town" {
+		t.Errorf("prefix %q for a course nine tenths in one town", s.Prefix)
+	}
 }

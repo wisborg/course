@@ -232,21 +232,19 @@ func Summarise(ctx context.Context, c *course.Course, src locate.TileSource, o O
 	return s, nil
 }
 
-// prefix is the one place the whole course was in, by o.Prefix, when the
-// depth is finer than a locality. A point with no answer does not count
-// against it; two different answers do, and then there is no prefix.
+// prefix is the place the course was in as a whole, by o.Prefix, when the
+// depth is finer than a locality: the one answer at least PrefixShare of the
+// points with an answer give. A course split between two places has none.
 func prefix(ctx context.Context, src locate.TileSource, pts []locate.Coord, t track, depth locate.Level, o Options) (string, error) {
 	if depth <= locate.Locality || o.Prefix == PrefixNone {
 		return "", nil
 	}
 	places, level := t.places, locate.Locality
 	if o.Prefix == PrefixCity {
-		// The outlines first. A course through two cities has no one city
-		// to name, and a label's guess is not asked to pick between them.
-		switch name, ok := one(t.places, locate.City); {
-		case !ok:
-			return "", nil
-		case name != "":
+		// The outlines first. Where they answer anywhere along the course,
+		// theirs is the answer, or there is none -- a label's guess is not
+		// asked to pick between two cities the outlines name.
+		if name, answered := mostly(t.places, locate.City); answered {
 			return name, nil
 		}
 		if src == nil {
@@ -262,25 +260,39 @@ func prefix(ctx context.Context, src locate.TileSource, pts []locate.Coord, t tr
 			return "", err
 		}
 	}
-	name, _ := one(places, level)
+	name, _ := mostly(places, level)
 	return name, nil
 }
 
-// one is the one name places give at a level, ignoring the places with no
-// answer there; false when they give two.
-func one(places []locate.Place, l locate.Level) (string, bool) {
-	name := ""
+// PrefixShare is how much of a course, of the points with an answer, one
+// place must hold to be named ahead of the chain.
+//
+// Not all of it. A run through Canberra's centre is in Canberra at 794 of its
+// 821 points and at the other 27 on top of the label of South Canberra, a
+// district of it mapped as a town; asking every point to agree gave the run no
+// prefix at all. Four fifths names the place the course was in, and a course
+// genuinely split between two places, which none holds four fifths of, still
+// has none.
+const PrefixShare = 0.8
+
+// mostly is the answer at least PrefixShare of the places answered at a level
+// give, or "" when none does; answered is whether any place was answered
+// there at all.
+func mostly(places []locate.Place, l locate.Level) (name string, answered bool) {
+	count := map[string]int{}
+	total := 0
 	for _, p := range places {
-		m, ok := p.Match(l)
-		if !ok {
-			continue
+		if m, ok := p.Match(l); ok {
+			count[m.Name]++
+			total++
 		}
-		if name != "" && m.Name != name {
-			return "", false
-		}
-		name = m.Name
 	}
-	return name, true
+	for n, c := range count {
+		if float64(c) >= PrefixShare*float64(total) {
+			return n, true
+		}
+	}
+	return "", total > 0
 }
 
 // airports are the airports a course starts and ends inside, when the depth
