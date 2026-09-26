@@ -1,0 +1,115 @@
+course
+Copyright 2026 Jesper Wisborg Krogh
+
+This product includes software developed by third parties, and reports data
+published by third parties.  The two are listed separately: a software licence
+obliges this PROGRAM, and a data licence obliges its OUTPUT.
+
+
+-------------------------------------------------------------------------------
+Apache License 2.0 components
+-------------------------------------------------------------------------------
+
+The following are licensed under the Apache License, Version 2.0, the same
+license as this project.  A copy is in the LICENSE file at the root of this
+repository.
+
+  fitactivity (github.com/wisborg/fitactivity)
+                             Copyright 2026 Jesper Wisborg Krogh.  Reads the
+                             course: FIT, GPX, TCX, KML and KMZ.
+  osmbase (github.com/wisborg/osmbase)
+                             Copyright 2026 Jesper Wisborg Krogh.  Answers
+                             where a coordinate is, from a store on this
+                             machine.  It is the SOFTWARE that is licensed
+                             here; the data in the store carries its own
+                             licence -- see "Data" below.
+  output (github.com/wisborg/output)
+                             Copyright 2026 Jesper Wisborg Krogh
+  Cobra (github.com/spf13/cobra)
+                             Copyright (c) 2013-2023 Steve Francia and the
+                             Cobra contributors
+  mousetrap (github.com/inconshreveable/mousetrap)
+                             Copyright 2022 Alan Shreve (@inconshreveable)
+  go.yaml.in/yaml/v3         Copyright (c) 2011-2019 Canonical Ltd;
+                             Copyright (c) 2006-2010 Kirill Simonov.
+                             DUAL-LICENSED, MIT and Apache 2.0: the eight files
+                             ported from libyaml (apic.go, emitterc.go,
+                             parserc.go, readerc.go, scannerc.go, writerc.go,
+                             yamlh.go, yamlprivateh.go) are MIT and the rest
+                             is Apache 2.0.  Reached through output, for
+                             --format yaml.
+
+
+-------------------------------------------------------------------------------
+BSD 3-Clause components
+-------------------------------------------------------------------------------
+
+  golang.org/x/image         Copyright 2009 The Go Authors.  Reached through
+                             osmbase.  An additional patent grant applies; see
+                             the PATENTS file in that module.
+  github.com/muktihari/fit   Copyright (c) 2023, Hikmatulloh Hari Mukti.
+                             Reached through fitactivity.
+  github.com/spf13/pflag     Copyright (c) 2012 Alex Ogier;
+                             Copyright (c) 2012 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the conditions of the BSD 3-Clause
+License are met, including retention of the above copyright notices, this
+list of conditions, and the disclaimer of warranties.  Neither the names of
+the copyright holders nor the names of their contributors may be used to
+endorse or promote products derived from this software without specific
+prior written permission.
+
+
+-------------------------------------------------------------------------------
+MIT components
+-------------------------------------------------------------------------------
+
+  github.com/mattn/go-runewidth
+                             Copyright (c) 2016 Yasuhiro Matsumoto.  Reached
+                             through output's tables.
+  github.com/clipperhouse/uax29/v2
+                             Copyright (c) 2020 Matt Sherman.  Reached through
+                             go-runewidth.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, subject to the inclusion of the above
+copyright notice and this permission notice in all copies or substantial
+portions of the Software.  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY
+OF ANY KIND.
+
+
+-------------------------------------------------------------------------------
+FIT
+-------------------------------------------------------------------------------
+
+The FIT protocol and FIT file format are proprietary to Garmin.  This project
+reads FIT files through fitactivity, which uses an independent third-party Go
+implementation (github.com/muktihari/fit), and neither includes nor
+distributes any part of Garmin's FIT SDK.  This project is not affiliated with
+or endorsed by Garmin.
+
+
+-------------------------------------------------------------------------------
+Data
+-------------------------------------------------------------------------------
+
+course ships no map data and contacts no map service.  It reads a store the
+user filled with osmbase, and the data in that store carries its own terms,
+which attach to what course prints from it.
+
+OpenStreetMap              Map data is (c) OpenStreetMap contributors,
+                           available under the Open Database License (ODbL).
+                           A place name read from it is a Produced Work, so
+                           the credit must travel with it; share-alike does
+                           not reach it.  course prints the credit the store's
+                           manifest records -- never a constant -- beside
+                           every summary that named a place from the tiles,
+                           and writes it into the JSON and YAML documents, so
+                           it goes wherever the answer is pasted.
+
+Natural Earth              Country, region and sea outlines.  Public domain;
+                           credited anyway, per answer, so a reader can tell
+                           two names in one summary came from different
+                           places under different terms.
