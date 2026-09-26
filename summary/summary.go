@@ -23,7 +23,7 @@ import (
 // Depths are the levels a summary can be reported at, widest first. Water is
 // not one: it is reported at every depth, because a course over the sea is
 // over the sea whatever depth the land beside it is named to.
-var Depths = []locate.Level{locate.Country, locate.Region, locate.Locality, locate.Macrohood, locate.Neighbourhood, locate.Area, locate.Street}
+var Depths = []locate.Level{locate.Country, locate.Region, locate.City, locate.Locality, locate.Macrohood, locate.Neighbourhood, locate.Area, locate.Street}
 
 // StreetReachM is how far a course may be from a street, in metres, to be on
 // it. osmbase's default reach is for a coordinate asked about on its own,
@@ -72,10 +72,11 @@ type Options struct {
 type Prefix int
 
 const (
-	// PrefixCity is the most prominent locality in reach -- the city a
-	// person would say the course was in, read from the map's own ranking of
-	// its places. A point in Sydney Olympic Park is in Sydney, though
-	// Parramatta's label is nearer.
+	// PrefixCity is the city the course was in: the city level's answer,
+	// from a city's mapped extent, where the boundaries have one -- and where
+	// they do not, the place whose reach the course is most within
+	// (locate.Options.Prominent). A run at Western Sydney's airport is in
+	// Sydney either way, though Penrith's label is nearer.
 	PrefixCity Prefix = iota
 	// PrefixLocality is the locality level's own answer. Where suburb
 	// outlines answer it, that is the local council.
@@ -238,8 +239,16 @@ func prefix(ctx context.Context, src locate.TileSource, pts []locate.Coord, t tr
 	if depth <= locate.Locality || o.Prefix == PrefixNone {
 		return "", nil
 	}
-	places := t.places
+	places, level := t.places, locate.Locality
 	if o.Prefix == PrefixCity {
+		// The outlines first. A course through two cities has no one city
+		// to name, and a label's guess is not asked to pick between them.
+		switch name, ok := one(t.places, locate.City); {
+		case !ok:
+			return "", nil
+		case name != "":
+			return name, nil
+		}
 		if src == nil {
 			return "", nil
 		}
@@ -253,18 +262,25 @@ func prefix(ctx context.Context, src locate.TileSource, pts []locate.Coord, t tr
 			return "", err
 		}
 	}
+	name, _ := one(places, level)
+	return name, nil
+}
+
+// one is the one name places give at a level, ignoring the places with no
+// answer there; false when they give two.
+func one(places []locate.Place, l locate.Level) (string, bool) {
 	name := ""
 	for _, p := range places {
-		m, ok := p.Match(locate.Locality)
+		m, ok := p.Match(l)
 		if !ok {
 			continue
 		}
 		if name != "" && m.Name != name {
-			return "", nil
+			return "", false
 		}
 		name = m.Name
 	}
-	return name, nil
+	return name, true
 }
 
 // airports are the airports a course starts and ends inside, when the depth

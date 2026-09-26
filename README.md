@@ -15,7 +15,7 @@ make build
 `Richmond → Kew → Putney → Fulham` — and `--detailed` the change log behind it: a row each
 time the course entered a different place, with how far in it was.
 
-`--depth` is the finest level named: `country`, `region`, `locality`, `macrohood`,
+`--depth` is the finest level named: `country`, `region`, `city`, `locality`, `macrohood`,
 `neighbourhood`, `area` (a park, a campus, an airport) or `street`. Named water — a sea, a
 strait, a bay — is named at every depth. The default, `auto`, takes the finest depth whose
 change log has no more than `--max-rows` rows (25): a local run is named street by street,
@@ -24,8 +24,9 @@ name something along the course and that the store holds the map for, and says o
 when it lacks some.
 
 A summary finer than a locality names the place the whole course was in first —
-`Sydney: Woolloomooloo → Darlinghurst` — chosen by `--prefix`: `city` (the most prominent
-place in reach), `locality` (the locality level's own answer, which is the council where
+`Sydney: Woolloomooloo → Darlinghurst` — chosen by `--prefix`: `city` (the city's mapped
+extent where the store has city outlines, and otherwise the place whose reach the course
+is most within — a big city reaches further than a town), `locality` (the locality level's own answer, which is the council where
 suburb outlines answer it) or `none`. A loop run more than once is written once,
 `4x (James Park → Hornsby)`, and a flight names the airports it left and reached where the
 store holds them.

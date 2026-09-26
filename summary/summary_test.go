@@ -462,4 +462,14 @@ func TestPrefixIsTheOnePlaceTheCourseWasIn(t *testing.T) {
 	if s = summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixLocality}); s.Prefix != "" {
 		t.Errorf("a course through two towns has prefix %q", s.Prefix)
 	}
+
+	// A city's mapped extent is the city prefix, ahead of any label.
+	w[locate.City] = always("Metropolis")
+	if s = summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixCity}); s.Prefix != "Metropolis" {
+		t.Errorf("city prefix %q, want the city holding the course", s.Prefix)
+	}
+	w[locate.City] = every("Metropolis", 0.01)
+	if s = summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixCity}); s.Prefix != "" {
+		t.Errorf("a course through two cities has city prefix %q", s.Prefix)
+	}
 }

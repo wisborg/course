@@ -37,7 +37,7 @@ var summaryCmd = &cobra.Command{
 places it passed through, and with --detailed as the change log behind it --
 one row each time the course entered a different place, with how far in it was.
 
---depth is the finest level named: country, region, locality, macrohood,
+--depth is the finest level named: country, region, city, locality, macrohood,
 neighbourhood, area (a park, a campus, an airport) or street. Named water -- a sea, a strait, a bay -- is named at
 every depth. The default, auto, takes the finest depth whose change log fits
 --max-rows rows: a local run is named street by street, and a flight falls back
@@ -56,7 +56,7 @@ func init() {
 	f.StringVar(&summaryOpts.store, "store", "", "the osmbase store to read places from (default: osmbase's own)")
 	f.StringVar(&summaryOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.StringVar(&summaryOpts.language, "lang", "", "prefer names in this language, e.g. en; default is the local spelling")
-	f.StringVar(&summaryOpts.prefix, "prefix", "city", "what the one line names ahead of its chain: city (the most prominent place in reach), locality (the locality level's answer), or none")
+	f.StringVar(&summaryOpts.prefix, "prefix", "city", "what the one line names ahead of its chain: city (the city's mapped extent, or the place whose reach the course is most within), locality (the locality level's answer), or none")
 	f.BoolVar(&summaryOpts.yes, "yes", false, "fetch the map the summary needs without asking")
 	summaryOpts.format = formatFlag{Format: output.Text}
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
