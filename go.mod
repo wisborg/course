@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/wisborg/fitactivity v0.7.0
-	github.com/wisborg/osmbase v0.11.0
+	github.com/wisborg/osmbase v0.12.0
 	github.com/wisborg/output v0.3.0
 )
 
@@ -18,5 +18,3 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/image v0.44.0 // indirect
 )
-
-replace github.com/wisborg/osmbase => ../osmbase
