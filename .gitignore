@@ -12,5 +12,10 @@ example_files/
 # Session output: renders, captured diffs, inspected frames.
 .scratch/
 
+# Maps "course map" writes, by default into the directory it is run in. A
+# map of a real recording is that recording drawn, and is kept out of the
+# repository with it.
+/*.png
+
 # The built command.
 /course
