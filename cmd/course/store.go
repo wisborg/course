@@ -100,7 +100,8 @@ func (s *store) credits(matches []locate.Match) []string {
 		switch {
 		case m.Attribution != "":
 			add(m.Attribution)
-		case m.Source == locate.Near:
+		case m.Source == locate.Near || m.Source == locate.Within:
+			// Both are read from the tiles, and owe the archive's credit.
 			add(s.manifest.Attribution)
 		}
 	}

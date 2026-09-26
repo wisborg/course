@@ -16,11 +16,19 @@ make build
 time the course entered a different place, with how far in it was.
 
 `--depth` is the finest level named: `country`, `region`, `locality`, `macrohood`,
-`neighbourhood` or `street`. Named water — a sea, a strait, a bay — is named at every depth.
-The default, `auto`, takes the finest depth whose change log fits `--budget` rows (25): a
-local run is named street by street, and a flight falls back to countries and seas by
-itself. Auto only considers depths the store holds the map for along the course, and says
-on stderr when it lacks some.
+`neighbourhood`, `area` (a park, a campus, an airport) or `street`. Named water — a sea, a
+strait, a bay — is named at every depth. The default, `auto`, takes the finest depth whose
+change log has no more than `--max-rows` rows (25): a local run is named street by street,
+and a flight falls back to countries and seas by itself. Auto only considers depths that
+name something along the course and that the store holds the map for, and says on stderr
+when it lacks some.
+
+A summary finer than a locality names the place the whole course was in first —
+`Sydney: Woolloomooloo → Darlinghurst` — chosen by `--prefix`: `city` (the most prominent
+place in reach), `locality` (the locality level's own answer, which is the council where
+suburb outlines answer it) or `none`. A loop run more than once is written once,
+`4x (James Park → Hornsby)`, and a flight names the airports it left and reached where the
+store holds them.
 
 A course reports what its file recorded and nothing else. A GPX has no distance, so its
 rows have none; a planned route has no times, so its rows have no elapsed time. Neither

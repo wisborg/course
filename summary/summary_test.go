@@ -2,6 +2,7 @@ package summary
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,37 +88,38 @@ func onlyLevels(w world) world {
 	return w
 }
 
-// A local course's streets are its change log when they fit the budget, and
+// A local course's streets are its change log when they fit in MaxRows, and
 // it falls back to the next depth out when they do not.
-func TestAutoTakesTheFinestDepthWithinTheBudget(t *testing.T) {
-	// 5.5 km; a street every 110 m is fifty streets, a suburb every 1.1 km
-	// is five.
+func TestAutoTakesTheFinestDepthWithinMaxRows(t *testing.T) {
+	// 5.5 km; a street every 165 m is thirty-three streets, a suburb every
+	// 1.1 km is five.
 	c := line(500, 0.0001)
 	w := onlyLevels(world{
 		locate.Country:       always("Land"),
 		locate.Neighbourhood: every("Suburb", 0.01),
-		locate.Street:        every("Street", 0.001),
+		locate.Street:        every("Street", 0.0015),
 	})
 	s := summarise(t, c, w, Options{Auto: true})
 	if s.Depth != locate.Neighbourhood || len(s.Rows) != 5 {
 		t.Errorf("auto chose %s with %d rows; want neighbourhood with 5", s.Depth, len(s.Rows))
 	}
-	s = summarise(t, c, w, Options{Auto: true, Budget: 60})
+	s = summarise(t, c, w, Options{Auto: true, MaxRows: 60})
 	if s.Depth != locate.Street {
 		t.Errorf("with room for every street, auto chose %s", s.Depth)
 	}
 	s = summarise(t, c, w, Options{Depth: locate.Street})
-	if s.Auto || len(s.Rows) < 45 {
+	if s.Auto || len(s.Rows) < 30 {
 		t.Errorf("street asked for gave %d rows at %s", len(s.Rows), s.Depth)
 	}
-	if got := s.Rows[1].Elapsed; got < 9*time.Second || got > 12*time.Second {
-		t.Errorf("the second street starts %v in; want about 10 s", got)
+	if got := s.Rows[1].Elapsed; got < 13*time.Second || got > 17*time.Second {
+		t.Errorf("the second street starts %v in; want about 15 s", got)
 	}
 }
 
-// A place the course only brushes is folded away; one it comes back from
-// is folded further; one it stays in is a row.
-func TestFlickerIsFolded(t *testing.T) {
+// A place that holds the course is a row once the course is in it for
+// minHeld; a shorter crossing is the GPS wobbling over the line. A detour
+// into it and back counts like any other stretch: the course went there.
+func TestCrossingsOfAnOutlineAreKept(t *testing.T) {
 	c := line(300, 0.0001) // 3.3 km
 	cases := []struct {
 		name  string
@@ -125,22 +127,66 @@ func TestFlickerIsFolded(t *testing.T) {
 		wantN int
 	}{
 		{"40 m of B", between("B", 0.01, 0.0104), 1},
-		{"a 300 m detour into B and back", between("B", 0.01, 0.0127), 1},
+		{"a 150 m detour into B and back", between("B", 0.01, 0.0114), 3},
 		{"600 m in B and back", between("B", 0.01, 0.0155), 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			w := onlyLevels(world{locate.Street: func(lon float64) string {
+			w := onlyLevels(world{locate.Neighbourhood: func(lon float64) string {
 				if n := tc.b(lon); n != "" {
 					return n
 				}
 				return "A"
 			}})
-			s := summarise(t, c, w, Options{Depth: locate.Street})
+			s := summarise(t, c, w, Options{Depth: locate.Neighbourhood})
 			if len(s.Rows) != tc.wantN {
 				t.Errorf("%d rows, want %d: %s", len(s.Rows), tc.wantN, s.OneLiner())
 			}
 		})
+	}
+}
+
+// A NEAREST answer's flicker is folded harder: a stretch under the depth's
+// minimum, and a detour back to where it came from under the larger one.
+func TestNearestFlickerIsFolded(t *testing.T) {
+	near := func(lengths ...float64) []run {
+		keys := []string{"A", "B", "A", "C"}
+		var rs []run
+		for i, l := range lengths {
+			rs = append(rs, run{first: i, last: i, key: keys[i%len(keys)], length: l})
+		}
+		return rs
+	}
+	least, detour := minRun(locate.Street)
+	for _, tc := range []struct {
+		name    string
+		lengths []float64
+		want    int
+	}{
+		{"a 300 m detour into B and back to A", []float64{1000, 300, 1000}, 1},
+		{"a 30 m brush of B on the way to... A", []float64{1000, 30, 1000}, 1},
+		{"a 500 m detour, over the limit", []float64{1000, 500, 1000}, 3},
+		{"long stretches all stay", []float64{1000, 1000, 1000, 1000}, 4},
+	} {
+		if got := fold(near(tc.lengths...), least, detour, 0); len(got) != tc.want {
+			t.Errorf("%s: %d runs, want %d", tc.name, len(got), tc.want)
+		}
+	}
+	held := near(1000, 300, 1000)
+	held[1].contained = true
+	if got := fold(held, least, detour, 0); len(got) != 3 {
+		t.Errorf("a 300 m crossing into a place that holds the course was folded")
+	}
+}
+
+// Auto does not choose a depth that names nothing at its own level: with no
+// region answered anywhere, "region" is the country log under another name.
+func TestAutoSkipsADepthThatNamesNothing(t *testing.T) {
+	c := line(200, 0.0001)
+	w := onlyLevels(world{locate.Country: always("Land"), locate.Locality: always("Town")})
+	s := summarise(t, c, w, Options{Auto: true})
+	if s.Depth != locate.Locality {
+		t.Errorf("auto chose %s; want locality, the finest that names anything", s.Depth)
 	}
 }
 
@@ -280,19 +326,20 @@ func TestAnUntimedCourseHasNoElapsedTime(t *testing.T) {
 	}
 }
 
-// When even the widest depth is over the budget, the shortest stretches go
+// When even the widest depth is over MaxRows, the shortest stretches go
 // until it fits -- but never the start or the finish.
-func TestAutoFoldsToTheBudgetKeepingTheEnds(t *testing.T) {
+func TestAutoFoldsToMaxRowsKeepingTheEnds(t *testing.T) {
 	c := line(2000, 0.001) // 220 km
-	// An archipelago: a 10 km island every 20 km, then a long last country.
+	// An archipelago: 22 km islands, each its own, between 22 km of sea --
+	// too long to fold as detours -- then a last country.
 	land := func(lon float64) string {
 		switch x := lon - 20; {
 		case x < 0.2:
 			return "Start"
 		case x >= 1.8:
 			return "Finish"
-		case int(x*10)%2 == 0:
-			return "Island"
+		case int(x*5)%2 == 0:
+			return "Island " + string(rune('A'+int(x*5)))
 		}
 		return ""
 	}
@@ -302,13 +349,15 @@ func TestAutoFoldsToTheBudgetKeepingTheEnds(t *testing.T) {
 		}
 		return ""
 	}})
-	s := summarise(t, c, w, Options{Auto: true, Budget: 5})
+	if s := summarise(t, c, w, Options{Auto: true, MaxRows: 50}); len(s.Rows) <= 5 {
+		t.Fatalf("the fixture is %d rows unfolded; it must be over 5 to test anything", len(s.Rows))
+	}
+	s := summarise(t, c, w, Options{Auto: true, MaxRows: 5})
 	if len(s.Rows) > 5 || s.Depth != locate.Country {
 		t.Fatalf("%d rows at %s; want at most 5 at country", len(s.Rows), s.Depth)
 	}
-	line := s.OneLiner()
 	if first, last := s.Rows[0].Label(), s.Rows[len(s.Rows)-1].Label(); first != "Start" || last != "Finish" {
-		t.Errorf("folded to %q; the start and finish must stay", line)
+		t.Errorf("folded to %q; the start and finish must stay", s.OneLiner())
 	}
 }
 
@@ -355,5 +404,62 @@ func TestBridgeNeedsTheSameGroundOnBothSides(t *testing.T) {
 	s := summarise(t, c, onlyLevels(world{locate.Country: country}), Options{Depth: locate.Country})
 	if len(s.Rows) != 3 || len(s.Rows[1].Places) != 0 {
 		t.Errorf("rows %+v; want West, a row naming nothing, East", s.Rows)
+	}
+}
+
+// A loop run more than once is written once, with the count; the longest
+// repeat at each place is taken, and the rest of the chain is left alone.
+func TestLoopsAreWrittenOnce(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"A B C A B C D", "2x (A → B → C) → D"},
+		{"S A B C A B C A B C", "S → 3x (A → B → C)"},
+		{"A B A C", "A → B → A → C"},
+		{"A B A B", "2x (A → B)"},
+		{"A", "A"},
+	} {
+		if got := strings.Join(loops(strings.Fields(tc.in)), " → "); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The one-liner puts the prefix ahead of the chain, and the airports beside
+// the first and last places -- the arrival at the end even when the course
+// was in one place throughout.
+func TestOneLinerDressing(t *testing.T) {
+	row := func(name string) Row { return Row{Places: []locate.Match{{Level: locate.Region, Name: name}}} }
+	s := &Summary{Prefix: "Sydney", Rows: []Row{row("A"), row("B")}}
+	if got := s.OneLiner(); got != "Sydney: A → B" {
+		t.Errorf("prefix: %q", got)
+	}
+	s = &Summary{Rows: []Row{row("Shire")}, Arrival: &locate.Match{Name: "Big Airport"}}
+	if got := s.OneLiner(); got != "Shire → Big Airport, Shire" {
+		t.Errorf("arrival in one place: %q", got)
+	}
+	s = &Summary{Rows: []Row{row("A"), row("Sea"), row("B")},
+		Departure: &locate.Match{Name: "Home Airport"}, Arrival: &locate.Match{Name: "Away Airport"}}
+	if got := s.OneLiner(); got != "Home Airport, A → Sea → Away Airport, B" {
+		t.Errorf("flight: %q", got)
+	}
+}
+
+// The prefix is the one locality the whole course was in, and only when the
+// summary is finer than a locality; two localities along it, none.
+func TestPrefixIsTheOnePlaceTheCourseWasIn(t *testing.T) {
+	c := line(200, 0.0001)
+	w := onlyLevels(world{locate.Country: always("Land"), locate.Locality: always("Town"), locate.Neighbourhood: every("Suburb", 0.01)})
+	s := summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixLocality})
+	if s.Prefix != "Town" {
+		t.Errorf("prefix %q, want Town", s.Prefix)
+	}
+	if s = summarise(t, c, w, Options{Depth: locate.Locality, Prefix: PrefixLocality}); s.Prefix != "" {
+		t.Errorf("a locality-depth summary has prefix %q", s.Prefix)
+	}
+	if s = summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixNone}); s.Prefix != "" {
+		t.Errorf("--prefix none gave %q", s.Prefix)
+	}
+	w[locate.Locality] = every("Town", 0.01)
+	if s = summarise(t, c, w, Options{Depth: locate.Neighbourhood, Prefix: PrefixLocality}); s.Prefix != "" {
+		t.Errorf("a course through two towns has prefix %q", s.Prefix)
 	}
 }

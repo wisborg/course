@@ -148,13 +148,27 @@ which are kept out of the repository:
 - **The budget holds at the widest depth too.** An archipelago is island, sea, island at
   country depth; when even that is over the budget, the shortest stretches are folded until
   it fits, never the start or the finish.
+- **Without suburb outlines, a neighbourhood is the nearest label** -- "Koreatown", "Ben
+  Buckler". osmbase now prefers a suburb label in reach, and with outlines built from an
+  extract (`osmbase boundaries --osm`) neighbourhoods are answered by containment.
+- **An outline crossing is a fact, not flicker.** A run along Powells Creek, the boundary
+  between two suburbs, crossed it every 150 m; answers that hold the course fold only below
+  100 m, where the limits above are for nearest-label answers.
+- **Parks, campuses and airports** are a level of their own, `area`, answered by the polygon
+  holding the course (osmbase's `Within`); a run inside Bygholm Park was otherwise the streets
+  around it.
+- **"On a street" means on it**: osmbase's `OnWay`, and 30 m rather than 250.
+- **The prefix is the prominent city**, not the nearest locality (Parramatta for Sydney Olympic
+  Park) and not the council; `--prefix` keeps the alternatives to compare.
 - **Distance is not computed.** A course reports what its file recorded; a computed
   distance along the track may come later, as a deliberate addition.
 
 ## Open questions
 
-- **The row budget.** 25 holds for runs of 5 km to a marathon and for long-haul flights; a
-  ride and a drive have not been tried.
+- **The row limit** (`--max-rows`). 25 holds for runs of 5 km to a marathon and for long-haul
+  flights; a city run through thirty suburbs is over it, and a ride and a drive have not been
+  tried. Fixed for now, by decision.
+- **The prefix's source** -- `city`, `locality` or `none` -- to be decided by comparing.
 - ~~**Part 3's representation.**~~ A separate type: `fitactivity.Route`, from `ReadRoute`;
   `Read` refuses a file without times with `ErrNoTimes` (fitactivity v0.7.0).
 - ~~**The fetch offer.**~~ Moved into osmbase's library as `fetch.Consent` and `fetch.Fill`

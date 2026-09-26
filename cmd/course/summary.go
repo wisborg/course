@@ -19,10 +19,11 @@ import (
 var summaryOpts struct {
 	detailed bool
 	depth    string
-	budget   int
+	maxRows  int
 	store    string
 	archive  string
 	language string
+	prefix   string
 	format   formatFlag
 }
 
@@ -34,9 +35,9 @@ places it passed through, and with --detailed as the change log behind it --
 one row each time the course entered a different place, with how far in it was.
 
 --depth is the finest level named: country, region, locality, macrohood,
-neighbourhood or street. Named water -- a sea, a strait, a bay -- is named at
+neighbourhood, area (a park, a campus, an airport) or street. Named water -- a sea, a strait, a bay -- is named at
 every depth. The default, auto, takes the finest depth whose change log fits
---budget rows: a local run is named street by street, and a flight falls back
+--max-rows rows: a local run is named street by street, and a flight falls back
 to regions and countries by itself.
 
 Several files are one course, merged in the order they were recorded.`,
@@ -48,10 +49,11 @@ func init() {
 	f := summaryCmd.Flags()
 	f.BoolVar(&summaryOpts.detailed, "detailed", false, "the change log rather than one line")
 	f.StringVar(&summaryOpts.depth, "depth", "auto", "the finest level named: auto, "+depthNames())
-	f.IntVar(&summaryOpts.budget, "budget", summary.DefaultBudget, "the most rows --depth auto may produce")
+	f.IntVar(&summaryOpts.maxRows, "max-rows", summary.DefaultMaxRows, "the most rows --depth auto may produce")
 	f.StringVar(&summaryOpts.store, "store", "", "the osmbase store to read places from (default: osmbase's own)")
 	f.StringVar(&summaryOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.StringVar(&summaryOpts.language, "lang", "", "prefer names in this language, e.g. en; default is the local spelling")
+	f.StringVar(&summaryOpts.prefix, "prefix", "city", "what the one line names ahead of its chain: city (the most prominent place in reach), locality (the locality level's answer), or none")
 	summaryOpts.format = formatFlag{Format: output.Text}
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
 	root.AddCommand(summaryCmd)
@@ -84,6 +86,10 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	pre, ok := summary.Prefixes[summaryOpts.prefix]
+	if !ok {
+		return fmt.Errorf("--prefix %q is not city, locality or none", summaryOpts.prefix)
+	}
 	c, err := course.Read(args...)
 	if err != nil {
 		return err
@@ -93,9 +99,9 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	s, err := summary.Summarise(cmd.Context(), c, st.tileSource(), summary.Options{
-		Depth: depth, Auto: auto, Budget: summaryOpts.budget,
+		Depth: depth, Auto: auto, MaxRows: summaryOpts.maxRows,
 		Language: summaryOpts.language, Boundaries: st.boundarySource(),
-		Holdings: st.holdings(),
+		Holdings: st.holdings(), Prefix: pre,
 	})
 	if err != nil {
 		return err
@@ -103,6 +109,11 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	var all []locate.Match
 	for _, r := range s.Rows {
 		all = append(all, r.Places...)
+	}
+	for _, m := range []*locate.Match{s.Departure, s.Arrival} {
+		if m != nil {
+			all = append(all, *m)
+		}
 	}
 	credits := st.credits(all)
 
@@ -209,9 +220,9 @@ func placeAt(r summary.Row, l locate.Level) (locate.Match, bool) {
 func writeFooter(w io.Writer, c *course.Course, s *summary.Summary, credits []string) {
 	how := "chosen"
 	if s.Auto {
-		how = fmt.Sprintf("auto, the finest within %d rows", summaryOpts.budget)
+		how = fmt.Sprintf("auto, the finest within %d rows", summaryOpts.maxRows)
 	}
-	fmt.Fprintf(w, "\ndepth %s (%s); ~ is the nearest named, not a boundary holding the course\n", s.Depth, how)
+	fmt.Fprintf(w, "\ndepth %s (%s); ~ is the nearest named, not a boundary or area holding the course\n", s.Depth, how)
 	finish := []string{}
 	if s.Finish.HasElapsed {
 		finish = append(finish, clock(s.Finish.Elapsed))
@@ -248,15 +259,18 @@ type jsonRow struct {
 }
 
 type jsonDoc struct {
-	Sources  []string     `json:"sources"`
-	Sport    string       `json:"sport,omitempty"`
-	Depth    locate.Level `json:"depth"`
-	Auto     bool         `json:"depth_auto"`
-	OneLiner string       `json:"one_liner"`
-	Rows     []jsonRow    `json:"rows"`
-	Finish   *jsonRow     `json:"finish,omitempty"`
-	Dropped  int          `json:"rogue_fixes_left_out"`
-	Credits  []string     `json:"credits"`
+	Sources   []string      `json:"sources"`
+	Sport     string        `json:"sport,omitempty"`
+	Depth     locate.Level  `json:"depth"`
+	Auto      bool          `json:"depth_auto"`
+	Prefix    string        `json:"prefix,omitempty"`
+	Departure *locate.Match `json:"departure,omitempty"`
+	Arrival   *locate.Match `json:"arrival,omitempty"`
+	OneLiner  string        `json:"one_liner"`
+	Rows      []jsonRow     `json:"rows"`
+	Finish    *jsonRow      `json:"finish,omitempty"`
+	Dropped   int           `json:"rogue_fixes_left_out"`
+	Credits   []string      `json:"credits"`
 }
 
 // jsonSummary is the summary for JSON and YAML. A time or a distance the
@@ -275,6 +289,7 @@ func jsonSummary(c *course.Course, s *summary.Summary, credits []string) jsonDoc
 		return r
 	}
 	d := jsonDoc{Sources: c.Sources, Sport: c.Sport, Depth: s.Depth, Auto: s.Auto, OneLiner: s.OneLiner(),
+		Prefix: s.Prefix, Departure: s.Departure, Arrival: s.Arrival,
 		Dropped: c.Dropped, Credits: credits, Rows: []jsonRow{}}
 	for _, r := range s.Rows {
 		d.Rows = append(d.Rows, conv(r.Mark, r.Lat, r.Lon, r.Places))

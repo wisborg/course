@@ -23,10 +23,18 @@ import (
 // Depths are the levels a summary can be reported at, widest first. Water is
 // not one: it is reported at every depth, because a course over the sea is
 // over the sea whatever depth the land beside it is named to.
-var Depths = []locate.Level{locate.Country, locate.Region, locate.Locality, locate.Macrohood, locate.Neighbourhood, locate.Street}
+var Depths = []locate.Level{locate.Country, locate.Region, locate.Locality, locate.Macrohood, locate.Neighbourhood, locate.Area, locate.Street}
 
-// DefaultBudget is how many rows an automatic depth may produce.
-const DefaultBudget = 25
+// StreetReachM is how far a course may be from a street, in metres, to be on
+// it. osmbase's default reach is for a coordinate asked about on its own,
+// where the nearest street two hundred metres off is worth knowing; a course
+// on a path through a park is not on that street, and naming it said the
+// course went somewhere it did not. See also locate.Options.OnWay, which
+// decides between a street and the unnamed path beside it.
+const StreetReachM = 30.0
+
+// DefaultMaxRows is how many rows an automatic depth may produce.
+const DefaultMaxRows = 25
 
 // DefaultSpacing is how far apart, in metres, the points looked up are.
 //
@@ -41,10 +49,11 @@ type Options struct {
 	// Depth is the finest level reported; zero value with Auto set, or Auto
 	// alone, chooses it.
 	Depth locate.Level
-	// Auto chooses the finest depth whose change log fits Budget rows.
+	// Auto chooses the finest depth whose change log has no more than
+	// MaxRows rows.
 	Auto bool
-	// Budget is the row budget for Auto; 0 is DefaultBudget.
-	Budget int
+	// MaxRows is the most rows Auto may produce; 0 is DefaultMaxRows.
+	MaxRows int
 	// Spacing is the distance between points looked up; 0 is DefaultSpacing.
 	Spacing float64
 	// Language prefers names in a language; see locate.Options.Language.
@@ -54,7 +63,29 @@ type Options struct {
 	// Holdings says which tiles the store holds; nil takes it that it holds
 	// every one. A store's slice.Source is one.
 	Holdings Holdings
+	// Prefix is where the one-liner's leading "Sydney:" comes from.
+	Prefix Prefix
 }
+
+// Prefix is where a summary finer than a locality takes the place it names
+// ahead of the chain: "Sydney: Woolloomooloo → Darlinghurst".
+type Prefix int
+
+const (
+	// PrefixCity is the most prominent locality in reach -- the city a
+	// person would say the course was in, read from the map's own ranking of
+	// its places. A point in Sydney Olympic Park is in Sydney, though
+	// Parramatta's label is nearer.
+	PrefixCity Prefix = iota
+	// PrefixLocality is the locality level's own answer. Where suburb
+	// outlines answer it, that is the local council.
+	PrefixLocality
+	// PrefixNone names nothing ahead of the chain.
+	PrefixNone
+)
+
+// Prefixes are the prefix modes by name, for a command line.
+var Prefixes = map[string]Prefix{"city": PrefixCity, "locality": PrefixLocality, "none": PrefixNone}
 
 // Holdings is what a store can say about the tiles it holds, without reading
 // any of them.
@@ -88,6 +119,15 @@ type Summary struct {
 	Rows []Row `json:"rows"`
 	// Finish is where the course ended: its elapsed time and distance.
 	Finish Mark `json:"finish"`
+	// Prefix is the one place the whole course was in, named ahead of the
+	// chain when the depth is finer than a locality; empty when there is no
+	// one place, or the depth is a locality or wider.
+	Prefix string `json:"prefix,omitempty"`
+	// Departure and Arrival are the airports a course starts and ends in,
+	// when it does and the depth is too wide to name them otherwise: a
+	// flight summarised by countries still says where it took off.
+	Departure *locate.Match `json:"departure,omitempty"`
+	Arrival   *locate.Match `json:"arrival,omitempty"`
 	// Short are the levels the store lacks the map for along the course,
 	// among those this summary asked about. An automatic depth is never one
 	// of them or finer; a chosen one may be, and its rows then name only
@@ -123,9 +163,9 @@ func Summarise(ctx context.Context, c *course.Course, src locate.TileSource, o O
 	if len(c.Points) == 0 {
 		return nil, fmt.Errorf("the course has no positions to look up")
 	}
-	budget := o.Budget
-	if budget <= 0 {
-		budget = DefaultBudget
+	maxRows := o.MaxRows
+	if maxRows <= 0 {
+		maxRows = DefaultMaxRows
 	}
 	spacing := o.Spacing
 	if spacing <= 0 {
@@ -144,9 +184,11 @@ func Summarise(ctx context.Context, c *course.Course, src locate.TileSource, o O
 		pts[i] = locate.Coord{Lat: c.Points[j].Lat, Lon: c.Points[j].Lon}
 	}
 	places, err := locate.AtEach(ctx, src, pts, locate.Options{
-		Language:   o.Language,
-		Boundaries: o.Boundaries,
-		Levels:     levelsTo(finest),
+		Language:     o.Language,
+		Boundaries:   o.Boundaries,
+		Levels:       levelsTo(finest),
+		OnWay:        true,
+		MaxDistanceM: map[locate.Level]float64{locate.Street: StreetReachM},
 	})
 	if err != nil {
 		return nil, err
@@ -162,25 +204,87 @@ func Summarise(ctx context.Context, c *course.Course, src locate.TileSource, o O
 	if o.Auto {
 		for i := len(Depths) - 1; i >= 0; i-- {
 			s.Depth = Depths[i]
-			if i > 0 && lacks(s.Short, s.Depth) {
+			if i > 0 && (lacks(s.Short, s.Depth) || !walk.answers(s.Depth)) {
 				continue
 			}
-			if s.Rows = walk.rows(s.Depth, 0); len(s.Rows) <= budget {
+			if s.Rows = walk.rows(s.Depth, 0); len(s.Rows) <= maxRows {
 				break
 			}
 		}
-		// Even the widest depth is over the budget -- an archipelago is
+		// Even the widest depth has more than maxRows rows -- an archipelago is
 		// island, sea, island, and each is a country or a sea -- so the
 		// shortest stretches go first until it fits, and what is left is the
 		// longest part of the journey rather than its first twenty-five.
-		if len(s.Rows) > budget {
-			s.Rows = walk.rows(s.Depth, budget)
+		if len(s.Rows) > maxRows {
+			s.Rows = walk.rows(s.Depth, maxRows)
 		}
 	} else {
 		s.Rows = walk.rows(finest, 0)
 	}
 	s.Finish = mark(c, c.Points[len(c.Points)-1])
+	if s.Prefix, err = prefix(ctx, src, pts, walk, s.Depth, o); err != nil {
+		return nil, err
+	}
+	if s.Departure, s.Arrival, err = airports(ctx, src, pts, s.Depth, o); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// prefix is the one place the whole course was in, by o.Prefix, when the
+// depth is finer than a locality. A point with no answer does not count
+// against it; two different answers do, and then there is no prefix.
+func prefix(ctx context.Context, src locate.TileSource, pts []locate.Coord, t track, depth locate.Level, o Options) (string, error) {
+	if depth <= locate.Locality || o.Prefix == PrefixNone {
+		return "", nil
+	}
+	places := t.places
+	if o.Prefix == PrefixCity {
+		if src == nil {
+			return "", nil
+		}
+		// The tiles only: a boundary answer is an outline holding the point,
+		// which is the council where suburbs are mapped, not the city.
+		var err error
+		places, err = locate.AtEach(ctx, src, pts, locate.Options{
+			Language: o.Language, Levels: []locate.Level{locate.Locality}, Prominent: true,
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+	name := ""
+	for _, p := range places {
+		m, ok := p.Match(locate.Locality)
+		if !ok {
+			continue
+		}
+		if name != "" && m.Name != name {
+			return "", nil
+		}
+		name = m.Name
+	}
+	return name, nil
+}
+
+// airports are the airports a course starts and ends inside, when the depth
+// is wider than an area -- at area depth or finer they are rows already.
+func airports(ctx context.Context, src locate.TileSource, pts []locate.Coord, depth locate.Level, o Options) (*locate.Match, *locate.Match, error) {
+	if depth >= locate.Area || src == nil {
+		return nil, nil, nil
+	}
+	ends := []locate.Coord{pts[0], pts[len(pts)-1]}
+	places, err := locate.AtEach(ctx, src, ends, locate.Options{Language: o.Language, Levels: []locate.Level{locate.Area}})
+	if err != nil {
+		return nil, nil, err
+	}
+	at := func(p locate.Place) *locate.Match {
+		if m, ok := p.Match(locate.Area); ok && m.Kind == "aerodrome" {
+			return &m
+		}
+		return nil
+	}
+	return at(places[0]), at(places[1]), nil
 }
 
 // shortfalls measures, for each level asked about that the tiles answer, how
@@ -274,6 +378,19 @@ func measured(c *course.Course) bool {
 
 func mark(c *course.Course, p course.Point) Mark {
 	return Mark{HasElapsed: c.Timed, Elapsed: p.Elapsed, HasDistance: p.HasDistance, Distance: p.Distance}
+}
+
+// answers reports whether anything along the course was answered at level
+// l. A depth that names nothing at its own level is the next wider depth's
+// change log with a finer name on it -- "area" for a course that passed no
+// park -- and auto does not choose it.
+func (t track) answers(l locate.Level) bool {
+	for _, p := range t.places {
+		if _, ok := p.Match(l); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // track is the looked-up points of a course.
@@ -428,6 +545,9 @@ type run struct {
 	first, last int // into track.idx
 	key         string
 	length      float64 // metres along the course
+	// contained is a run whose finest answer is an outline or an area
+	// holding the course, rather than the nearest name to it.
+	contained bool
 }
 
 // minRun is how far a course must go in a place for it to be a row, and
@@ -454,7 +574,7 @@ func minRun(d locate.Level) (least, detour float64) {
 	switch d {
 	case locate.Street:
 		return 60, 400
-	case locate.Neighbourhood, locate.Macrohood:
+	case locate.Neighbourhood, locate.Macrohood, locate.Area:
 		return 250, 1_000
 	case locate.Locality:
 		return 500, 2_000
@@ -497,9 +617,34 @@ func (t track) runs(levels []locate.Level) []run {
 			runs[n-1].length += step / 2
 			step /= 2
 		}
-		runs = append(runs, run{first: i, last: i, key: k, length: step})
+		runs = append(runs, run{first: i, last: i, key: k, length: step, contained: finestHeld(t.places[i], levels)})
 	}
 	return runs
+}
+
+// minHeld is how far a course must go in a place that holds it -- an outline,
+// a park -- to be a row, returning or not.
+//
+// The limits above are for NEAREST answers, whose flicker is an artefact of
+// asking which label is closest. An outline holding the course is a fact, and
+// the course crossing it is too: a run along Powells Creek, which is the
+// boundary between Sydney Olympic Park and Liberty Grove, is in each for a
+// hundred and fifty metres at a time, and that is where it went. Only a
+// crossing short enough to be the GPS's wobble across the line is folded.
+const minHeld = 100.0
+
+// finestHeld reports whether a place's finest land answer at these levels is
+// one that holds it.
+func finestHeld(p locate.Place, levels []locate.Level) bool {
+	for i := len(levels) - 1; i >= 0; i-- {
+		if levels[i] == locate.Water {
+			continue
+		}
+		if m, ok := p.Match(levels[i]); ok {
+			return m.Source == locate.Contained || m.Source == locate.Within
+		}
+	}
+	return false
 }
 
 // fold folds every run shorter than min -- or than detour, when the runs
@@ -518,6 +663,9 @@ func fold(runs []run, min, detour float64, limit int) []run {
 			least := min
 			if i+1 < len(runs) && runs[i-1].key == runs[i+1].key {
 				least = detour
+			}
+			if runs[i].contained {
+				least = minHeld
 			}
 			foldable := runs[i].length < least || (over && i < len(runs)-1)
 			if foldable && (shortest < 0 || runs[i].length < runs[shortest].length) {
@@ -550,8 +698,8 @@ func key(p locate.Place, levels []locate.Level) string {
 	return b.String()
 }
 
-// names are a run's places: at each level, the best evidence anywhere in the
-// run for the one name it has there -- a boundary holding a point over the
+// names are a run's places: at each level, the best evidence among the run's
+// points for the one name it has there -- a boundary holding a point over the
 // nearest name to one, and the nearest of those. Every point in a run has the
 // same names, but not the same evidence for them: the first point of a run
 // along the coast may have its region only by bridge while the next is inside
@@ -563,6 +711,12 @@ func (t track) names(r run, levels []locate.Level) []locate.Match {
 		var best locate.Match
 		found := false
 		for i := r.first; i <= r.last; i++ {
+			// Only the points that are this run's place: a run that had a
+			// short stretch folded into it still holds that stretch's points,
+			// and their names are the ones the fold took away.
+			if key(t.places[i], levels) != r.key {
+				continue
+			}
 			m, ok := t.places[i].Match(l)
 			if !ok {
 				continue
@@ -609,7 +763,9 @@ func (r Row) Label() string {
 }
 
 // OneLiner is the chain of places the course passed through, each row's most
-// specific name with repeats left out: "Richmond → Kew → Putney".
+// specific name with repeats left out -- "Sydney: Richmond → Kew → Putney" --
+// with a loop run more than once written once, "2x (Lowe Road → …)", and the
+// airports at the ends of a flight beside the first and last names.
 func (s *Summary) OneLiner() string {
 	var parts []string
 	for _, r := range s.Rows {
@@ -619,5 +775,63 @@ func (s *Summary) OneLiner() string {
 		}
 		parts = append(parts, l)
 	}
-	return strings.Join(parts, " → ")
+	if len(parts) == 1 && s.Arrival != nil {
+		// One place throughout, and an airport at the end: the start and the
+		// end are both that place, and the airport belongs to the end.
+		parts = append(parts, parts[0])
+	}
+	if len(parts) > 0 {
+		if s.Departure != nil {
+			parts[0] = s.Departure.Name + ", " + parts[0]
+		}
+		if s.Arrival != nil {
+			parts[len(parts)-1] = s.Arrival.Name + ", " + parts[len(parts)-1]
+		}
+	}
+	line := strings.Join(loops(parts), " → ")
+	if s.Prefix != "" && line != "" {
+		line = s.Prefix + ": " + line
+	}
+	return line
+}
+
+// loops writes a stretch of the chain repeated back to back once, with how
+// many times: a course run twice round the same block is the block, twice.
+//
+// Read left to right, taking at each place the repeat that covers the most of
+// the chain, and of those the shortest: a loop of ten streets run twice is one
+// group rather than the shorter coincidences inside it, and a lap of two
+// places run four times is "4x" of the two rather than "2x" of the four. A
+// stretch of one name cannot repeat, since repeats are already left out.
+func loops(parts []string) []string {
+	var out []string
+	for i := 0; i < len(parts); {
+		bestK, bestN := 0, 1
+		for k := 2; k <= (len(parts)-i)/2; k++ {
+			n := 1
+			for i+(n+1)*k <= len(parts) && equal(parts[i:i+k], parts[i+n*k:i+(n+1)*k]) {
+				n++
+			}
+			if n > 1 && n*k > bestN*bestK {
+				bestK, bestN = k, n
+			}
+		}
+		if bestK == 0 {
+			out = append(out, parts[i])
+			i++
+			continue
+		}
+		out = append(out, fmt.Sprintf("%dx (%s)", bestN, strings.Join(parts[i:i+bestK], " → ")))
+		i += bestN * bestK
+	}
+	return out
+}
+
+func equal(a, b []string) bool {
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
