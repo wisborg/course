@@ -30,6 +30,8 @@ var mapOpts struct {
 	store         string
 	archive       string
 	yes           bool
+	language      string
+	fonts         []string
 }
 
 var mapCmd = &cobra.Command{
@@ -46,6 +48,12 @@ fetch it, which tells the archive's host the area; --yes answers in advance.
 Declined, the map is drawn from what the store holds, from shallower tiles or
 hatched where it holds nothing.
 
+Names are written in the built-in Go font, and letters it lacks -- Thai,
+Indian scripts, Chinese -- in the first of the fonts given with --font, then
+of a few common system fonts, that has them. Scripts whose letters join, like
+Arabic and Devanagari, come out in real letters but not always joined
+properly; --lang en writes names in English wherever the map has them.
+
 The picture carries the map data's credit in its corner, which is what the
 data's licence asks of anything drawn from it.`,
 	Args: cobra.MinimumNArgs(1),
@@ -61,6 +69,8 @@ func init() {
 	f.StringVar(&mapOpts.store, "store", "", "the osmbase store to draw from (default: osmbase's own)")
 	f.StringVar(&mapOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.BoolVar(&mapOpts.yes, "yes", false, "fetch what the store lacks without asking")
+	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
+	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
 }
 
@@ -71,6 +81,9 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	if mapOpts.width < 64 || mapOpts.height < 64 {
 		return fmt.Errorf("a map of %d by %d pixels is too small to draw a course on", mapOpts.width, mapOpts.height)
+	}
+	if err := loadFonts(mapOpts.fonts); err != nil {
+		return err
 	}
 	c, err := course.Read(args...)
 	if err != nil {
@@ -122,6 +135,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	writeMapReport(cmd.OutOrStdout(), out, c, view, res, len(routemap.DistanceMarkers(c)))
+	writeMissing(errw)
 	return nil
 }
 
@@ -224,7 +238,7 @@ func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, v render.V
 		return blank(), nil, nil
 	}
 	r, err := render.New(src, render.Options{
-		Style: render.BasemapStyle(), Palette: p, Attribution: m.Attribution,
+		Style: render.BasemapStyle(), Palette: p, Attribution: m.Attribution, Language: mapOpts.language,
 		LabelFace: faceAt(baseTextSize), LabelFaceFor: func(s float64) font.Face { return faceAt(baseTextSize * s) },
 	})
 	if err != nil {

@@ -54,6 +54,15 @@ so many kilometres where the file recorded distance. A stretch the recording has
 for -- a tunnel, a flight over an ocean -- is dashed, because the straight line across it is
 not where the course went. The picture carries the map data's credit in its corner.
 
+Names are written in the built-in Go font, and letters it lacks -- Thai, Indian scripts,
+Chinese, Arabic -- in the first of the fonts given with `--font`, then of the common system
+fonts this machine has (Arial Unicode and Apple's script fonts on macOS, Noto on Linux),
+that has them. Arabic and Hebrew are drawn right to left, with Arabic's letters joined.
+Scripts that reorder letters within a syllable, such as Devanagari and Myanmar, need a text
+shaper for their exact forms and are drawn letter by letter. `--lang en` writes names in
+English wherever the map has them, and `map` says when some letters had no font at all.
+The system fonts are read on this machine and never copied anywhere.
+
 ## Fetching what the store lacks
 
 Both commands check the store before they read it, and offer to fetch what is missing --
