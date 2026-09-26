@@ -1,0 +1,16 @@
+# Real recordings: where somebody was, minute by minute. They are for
+# checking by hand and never enter a commit, a fixture or a doc -- tests
+# build synthetic courses instead.
+example_files/
+/*.fit
+/*.FIT
+/*.gpx
+/*.kml
+/*.kmz
+/*.tcx
+
+# Session output: renders, captured diffs, inspected frames.
+.scratch/
+
+# The built command.
+/course
