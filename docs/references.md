@@ -5,7 +5,7 @@ against. The Rhodes parkrun, run eighty times, drawn over the eighty-first; a st
 from home; for a flight, the great circle between where it took off and where it landed.
 The reference is drawn dashed, in an ink of its own, under the course.
 
-This is the plan. Nothing here is built yet.
+This is the plan. Parts 0 to 2 are built; matching and comparison are next.
 
 ## Where references come from
 

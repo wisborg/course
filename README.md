@@ -78,9 +78,20 @@ The system fonts are read on this machine and never copied anywhere.
 `--reference` draws another course beside this one for comparison -- any file `course` reads,
 repeatable -- and `--great-circle` the shortest way over the globe between the course's start
 and finish. Each is dashed, under the course, in a colour of its own, and a legend in the top
-left says which line is which. The view holds the course and all of them. Storing references
-by name, and matching activities against them, are planned in
-[docs/references.md](docs/references.md).
+left says which line is which. The view holds the course and all of them.
+
+References you use often can be stored by name:
+
+```
+./course reference add "Rhodes parkrun" run.fit --alias rhodes --from 6m --to 34m
+./course reference list
+./course map today.fit --reference rhodes
+```
+
+A stored reference is the original file, unchanged, with a note of which part of it is the
+course -- `--from`/`--to` in time, or `--from-km`/`--to-km` -- kept under `course/references`
+in your configuration directory (`--references` for elsewhere). Matching activities against
+them is planned in [docs/references.md](docs/references.md).
 
 ## Fetching what the store lacks
 

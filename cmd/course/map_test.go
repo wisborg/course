@@ -18,15 +18,19 @@ import (
 // it: cobra keeps them between runs in one process, and array flags go on
 // appending.
 func resetFlags(t *testing.T, c *cobra.Command) {
-	t.Cleanup(func() {
-		c.Flags().VisitAll(func(f *pflag.Flag) {
-			if sv, ok := f.Value.(pflag.SliceValue); ok {
-				sv.Replace(nil)
-			} else {
-				f.Value.Set(f.DefValue)
-			}
-			f.Changed = false
-		})
+	t.Cleanup(func() { resetNow(c) })
+}
+
+// resetNow puts a command's flags back to their defaults at once, between
+// two runs of it in one test.
+func resetNow(c *cobra.Command) {
+	c.Flags().VisitAll(func(f *pflag.Flag) {
+		if sv, ok := f.Value.(pflag.SliceValue); ok {
+			sv.Replace(nil)
+		} else {
+			f.Value.Set(f.DefValue)
+		}
+		f.Changed = false
 	})
 }
 

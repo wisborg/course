@@ -72,7 +72,8 @@ func init() {
 	f.StringVar(&mapOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.BoolVar(&mapOpts.yes, "yes", false, "fetch what the store lacks without asking")
 	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
-	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a FIT, GPX, TCX, KML or KMZ file; repeat for several")
+	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, or a FIT, GPX, TCX, KML or KMZ file; repeat for several")
+	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
 	f.BoolVar(&mapOpts.greatCircle, "great-circle", false, "draw the great circle between the course's start and finish, dashed: the shortest way over the globe")
 	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
@@ -184,19 +185,40 @@ func nameOf(path string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// loadReferences reads the references to draw beside c: each file given,
-// named for it, and the great circle between c's ends when asked for.
-func loadReferences(c *course.Course, files []string, greatCircle bool) ([]routemap.Reference, error) {
+// loadReferences reads the references to draw beside c: each one given, a
+// file if there is one by that name and a stored reference otherwise, and
+// the great circle between c's ends when asked for.
+//
+// A file first, because a path is unambiguous and a name is only a name: a
+// reference stored as "run.gpx" should not stop the file run.gpx being
+// drawn.
+func loadReferences(c *course.Course, names []string, greatCircle bool) ([]routemap.Reference, error) {
 	var refs []routemap.Reference
-	for _, f := range files {
-		rc, err := course.Read(f)
+	for _, n := range names {
+		if info, err := os.Stat(n); err == nil && !info.IsDir() {
+			rc, err := course.Read(n)
+			if err != nil {
+				return nil, fmt.Errorf("--reference %s: %w", n, err)
+			}
+			if len(rc.Points) < 2 {
+				return nil, fmt.Errorf("--reference %s has no line to draw", n)
+			}
+			refs = append(refs, routemap.FromCourse(nameOf(n), rc))
+			continue
+		}
+		s, err := openReferences()
 		if err != nil {
-			return nil, fmt.Errorf("--reference %s: %w", f, err)
+			return nil, err
 		}
-		if len(rc.Points) < 2 {
-			return nil, fmt.Errorf("--reference %s has no line to draw", f)
+		m, err := s.Find(n)
+		if err != nil {
+			return nil, fmt.Errorf("--reference %s: no such file, and %w", n, err)
 		}
-		refs = append(refs, routemap.FromCourse(nameOf(f), rc))
+		rc, err := m.Course()
+		if err != nil {
+			return nil, fmt.Errorf("--reference %s: %w", n, err)
+		}
+		refs = append(refs, routemap.FromCourse(m.Name, rc))
 	}
 	if greatCircle {
 		gc, ok := routemap.GreatCircle(c)
