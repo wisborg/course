@@ -65,23 +65,28 @@ func TestCompareCommand(t *testing.T) {
 	// Two minutes stood still halfway are listed under the splits, when
 	// and where they were as the 10 m samples have them.
 	stopped := filepath.Join(dir, "stopped.gpx")
-	var b strings.Builder
-	b.WriteString(`<gpx><trk><trkseg>`)
-	for i, sec := 0, 0; i < 100; i++ {
-		fixes := 1
-		if i == 50 {
-			fixes = 13 // a fix every 10 s while standing, as a watch records
-		}
-		for range fixes {
-			fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.0002), stamp(sec))
-			sec += 10
-		}
-	}
-	b.WriteString(`</trkseg></trk></gpx>`)
-	writeFile(t, stopped, b.String())
+	writeStopped(t, stopped, 0, 50)
 	resetNow(compareCmd)
 	if out, err := run(t, "compare", "--reference", ref, stopped); err != nil || !strings.Contains(out, "stopped at 0:08:") || !strings.Contains(out, "1.09 km along") {
 		t.Errorf("a run with a stop: %v\n%s", err, out)
+	}
+
+	// Compared the other way round, the stop is the reference's, and is
+	// listed as such, in text and in JSON.
+	resetNow(compareCmd)
+	if out, err := run(t, "compare", "--reference", stopped, ref); err != nil || !strings.Contains(out, "the reference stopped for 2m") || strings.Contains(out, "\nstopped at") {
+		t.Errorf("against a reference that stopped: %v\n%s", err, out)
+	}
+	resetNow(compareCmd)
+	var both struct {
+		Stops    []any `json:"stops"`
+		RefStops []struct {
+			AtM float64 `json:"at_m"`
+		} `json:"reference_stops"`
+	}
+	if out, err := run(t, "compare", "--reference", stopped, "--format", "json", ref); err != nil || json.Unmarshal([]byte(out), &both) != nil ||
+		len(both.Stops) != 0 || len(both.RefStops) != 1 || both.RefStops[0].AtM < 1000 || both.RefStops[0].AtM > 1200 {
+		t.Errorf("against a reference that stopped, as JSON: %v\n%s", err, out)
 	}
 
 	// 40 m north of the reference is off it, unless --near says otherwise.
@@ -100,6 +105,7 @@ func TestCompareCommand(t *testing.T) {
 	out, err = run(t, "compare", "--reference", ref, "--split", "0.5", "--format", "json", run1)
 	var doc struct {
 		Reference string  `json:"reference"`
+		AlongM    float64 `json:"along_m"`
 		GapS      float64 `json:"gap_s"`
 		Splits    []struct {
 			ToM  float64 `json:"to_m"`
@@ -112,7 +118,7 @@ func TestCompareCommand(t *testing.T) {
 	if err != nil || json.Unmarshal([]byte(out), &doc) != nil {
 		t.Fatalf("compare as JSON: %v\n%s", err, out)
 	}
-	if doc.Reference != "ref" || doc.GapS < 95 || doc.GapS > 100 || len(doc.Splits) != 5 || doc.Stops == nil {
+	if doc.Reference != "ref" || doc.AlongM != 0 || doc.GapS < 95 || doc.GapS > 100 || len(doc.Splits) != 5 || doc.Stops == nil {
 		t.Errorf("compare as JSON: %+v", doc)
 	}
 	if s := doc.Splits[0]; s.ToM != 500 || s.GapS != 0 || s.RunS != s.RefS {
@@ -145,4 +151,52 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// writeStopped writes the course writePaced does, from point first on, a
+// fix every 10 s, standing two minutes at point at.
+func writeStopped(t *testing.T, path string, first, at int) {
+	t.Helper()
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i, sec := first, 0; i < 100; i++ {
+		fixes := 1
+		if i == at {
+			fixes = 13 // a fix every 10 s while standing, as a watch records
+		}
+		for range fixes {
+			fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.0002), stamp(sec))
+			sec += 10
+		}
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, path, b.String())
+}
+
+// Both runs' stops come in the order they are along the course; and a run
+// that joined the course late says where along it the comparison starts.
+func TestCompareStopsInOrderAndALateStart(t *testing.T) {
+	resetFlags(t, compareCmd)
+	dir := t.TempDir()
+	ref, late := filepath.Join(dir, "ref.gpx"), filepath.Join(dir, "late.gpx")
+	writeStopped(t, ref, 0, 50)   // the reference stood at 1.1 km
+	writeStopped(t, late, 15, 80) // the run joined at 0.33 km and stood at 1.75
+	out, err := run(t, "compare", "--reference", ref, late)
+	if err != nil {
+		t.Fatalf("compare: %v\n%s", err, out)
+	}
+	refAt, runAt := strings.Index(out, "the reference stopped"), strings.Index(out, "\nstopped at")
+	if refAt < 0 || runAt < 0 || refAt > runAt {
+		t.Errorf("the stops are not both there in order along the course:\n%s", out)
+	}
+	if !strings.Contains(out, "from 0.3") || !strings.Contains(out, "km along, from") {
+		t.Errorf("does not say the comparison starts 0.33 km along:\n%s", out)
+	}
+	resetNow(compareCmd)
+	var doc struct {
+		AlongM float64 `json:"along_m"`
+	}
+	if out, err := run(t, "compare", "--reference", ref, "--format", "json", late); err != nil || json.Unmarshal([]byte(out), &doc) != nil || doc.AlongM < 300 || doc.AlongM > 360 {
+		t.Errorf("as JSON, along_m: %v\n%s", err, out)
+	}
 }

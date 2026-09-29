@@ -178,3 +178,46 @@ func TestSplits(t *testing.T) {
 		t.Errorf("splits of one point = %+v, want none", got)
 	}
 }
+
+// The reference's own stops are kept with the comparison, where they are
+// along it -- those on the stretch compared, and no others.
+func TestAgainstKeepsTheReferencesStops(t *testing.T) {
+	ref := straight(0, 2000, 0, func(x float64) time.Duration {
+		if x == 600 || x == 1800 {
+			return 2 * time.Minute
+		}
+		return time.Second
+	})
+	run := straight(0, 1200, 0, steady(time.Second)) // only part of it
+	p, err := Against(run, ref, match.Options{MinCoverage: 0.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.RefStops) != 1 || math.Abs(p.RefStops[0].At-600) > 10 {
+		t.Errorf("the reference's stops are %+v; want the one 600 m along, on the stretch compared", p.RefStops)
+	}
+	if len(p.Match.Stops) != 0 {
+		t.Errorf("the run, which did not stop, has stops %+v", p.Match.Stops)
+	}
+	// Compared only as far as the run went, not to the end of the
+	// reference in no time.
+	if got := float64(len(p.Run)-1) * p.Step; p.From != 0 || math.Abs(got-1200) > 20 {
+		t.Errorf("compared %v m from %v m along, want the first 1200", got, p.From)
+	}
+
+	// A run that joined 700 m along is compared from there, and its splits
+	// are where they are along the reference.
+	late := straight(700, 2000, 0, steady(time.Second))
+	if p, err = Against(late, ref, match.Options{MinCoverage: 0.5}); err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(p.From-700) > 20 || p.Run[0] != 0 || p.Ref[0] != 0 {
+		t.Errorf("compared from %v m along, times from %v and %v; want from 700 m, both at 0", p.From, p.Run[0], p.Ref[0])
+	}
+	if s := p.Splits(1000); len(s) == 0 || s[0].From != p.From || s[0].To != p.From+1000 {
+		t.Errorf("the splits of a run that joined late are %+v", s)
+	}
+	if len(p.RefStops) != 1 || math.Abs(p.RefStops[0].At-1800) > 10 {
+		t.Errorf("the reference's stops from 700 m on are %+v, want the one at 1800 m", p.RefStops)
+	}
+}

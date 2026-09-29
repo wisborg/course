@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -34,9 +35,9 @@ The two are lined up by where on the course each was, not by time or by the
 distance each recorded, so a wide corner or a GPS fix out of place does not
 put them out of step; the splits are pieces of the reference, the same ground
 for both. Only the stretch of the run that followed the reference is compared
--- a warm-up or a cool-down around it is left out -- and where the run stopped
-on the way is listed under the splits, since a stop is usually why a split was
-slow.
+-- a warm-up or a cool-down around it is left out -- and where either run
+stopped on the way is listed under the splits, since a stop is usually why a
+split was slow, or, in the reference, why one looks fast.
 
 The reference must be a run: it needs its times. A course file with none is
 refused. Some route planners write times into a course at a pace of their
@@ -127,14 +128,35 @@ func splitTable(splits []compare.Split) *table.Table {
 func writeComparison(w io.Writer, name string, p *compare.Profile, splits []compare.Split) {
 	m := p.Match
 	last := len(p.Run) - 1
-	fmt.Fprintf(w, "against %s, %.2f km of it, from %s to %s into the run: %s\n\n",
-		name, float64(last)*p.Step/1000, clock(m.FromTime), clock(m.ToTime), gapText(p.Gap(last)))
+	length := float64(last) * p.Step
+	of := fmt.Sprintf("%.2f km of it", length/1000)
+	if p.From > 0 {
+		// The run joined the reference late; say where, or the splits'
+		// kilometres would seem to start from nowhere.
+		of = fmt.Sprintf("%.2f km of it, from %.2f to %.2f km along", length/1000, p.From/1000, (p.From+length)/1000)
+	}
+	fmt.Fprintf(w, "against %s, %s, from %s to %s into the run: %s\n\n",
+		name, of, clock(m.FromTime), clock(m.ToTime), gapText(p.Gap(last)))
 	fmt.Fprint(w, splitTable(splits).String())
-	if len(m.Stops) > 0 {
+	// Both runs' stops, in the order they come along the course, so a stop
+	// is read beside the split it is in.
+	type stop struct {
+		at   float64
+		line string
+	}
+	var stops []stop
+	for _, s := range m.Stops {
+		stops = append(stops, stop{s.At, fmt.Sprintf("stopped at %s for %s, %.2f km along the course", clock(s.From), s.Duration.Round(time.Second), s.At/1000)})
+	}
+	for _, s := range p.RefStops {
+		stops = append(stops, stop{s.At, fmt.Sprintf("the reference stopped for %s, %.2f km along the course", s.Duration.Round(time.Second), s.At/1000)})
+	}
+	sort.SliceStable(stops, func(i, j int) bool { return stops[i].at < stops[j].at })
+	if len(stops) > 0 {
 		fmt.Fprintln(w)
 	}
-	for _, s := range m.Stops {
-		fmt.Fprintf(w, "stopped at %s for %s, %.2f km along the course\n", clock(s.From), s.Duration.Round(time.Second), s.At/1000)
+	for _, s := range stops {
+		fmt.Fprintln(w, s.line)
 	}
 }
 
@@ -152,10 +174,12 @@ type jsonComparisonDoc struct {
 	ToM       float64     `json:"to_m"`
 	FromS     float64     `json:"from_s"`
 	ToS       float64     `json:"to_s"`
+	AlongM    float64     `json:"along_m"`
 	LengthM   float64     `json:"length_m"`
 	GapS      float64     `json:"gap_s"`
 	Splits    []jsonSplit `json:"splits"`
 	Stops     []jsonStop  `json:"stops"`
+	RefStops  []jsonStop  `json:"reference_stops"`
 }
 
 // jsonComparison is the comparison as the other commands' JSON is written:
@@ -168,14 +192,17 @@ func jsonComparison(name string, p *compare.Profile, splits []compare.Split) jso
 	j := jsonComparisonDoc{
 		Reference: name, FromM: round1(m.From), ToM: round1(m.To),
 		FromS: secs(m.FromTime), ToS: secs(m.ToTime),
-		LengthM: round1(float64(last) * p.Step), GapS: secs(p.Gap(last)),
-		Splits: []jsonSplit{}, Stops: []jsonStop{},
+		AlongM: round1(p.From), LengthM: round1(float64(last) * p.Step), GapS: secs(p.Gap(last)),
+		Splits: []jsonSplit{}, Stops: []jsonStop{}, RefStops: []jsonStop{},
 	}
 	for _, s := range splits {
 		j.Splits = append(j.Splits, jsonSplit{FromM: round1(s.From), ToM: round1(s.To), RunS: secs(s.Run), RefS: secs(s.Ref), GapS: secs(s.Gap)})
 	}
 	for _, st := range m.Stops {
 		j.Stops = append(j.Stops, jsonStop{AtM: round1(st.At), FromS: secs(st.From), DurationS: secs(st.Duration), OffM: round1(st.Off)})
+	}
+	for _, st := range p.RefStops {
+		j.RefStops = append(j.RefStops, jsonStop{AtM: round1(st.At), FromS: secs(st.From), DurationS: secs(st.Duration)})
 	}
 	return j
 }

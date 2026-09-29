@@ -207,11 +207,15 @@ for pace, height or power along a single run later.
 `course compare run.fit --reference "Rhodes parkrun"` is the same comparison in words: splits
 of `--split` kilometres (1 by default) measured along the reference -- the same ground for
 both, however far either ran over it -- with each run's time over the split, which was
-faster, and the running gap at its end; then the run's stops, which are usually why a split
-was slow. Text, CSV, JSON or YAML, like `match`.
+faster, and the running gap at its end; then both runs' stops in order along the course --
+the run's, which are usually why a split was slow, and the reference's, which are why one
+looks fast. Text, CSV, JSON or YAML, like `match`.
 
-Not yet: the reference's own stops. A reference run that stopped makes the run look fast
-over that split, and nothing says why.
+Only the stretch the run was on the reference is compared. The alignment lines up the whole
+reference, so a run that covered only part of it -- a watch started late -- has the rest
+aligned with wherever it began or ended; those ends, farther than `--near` from the
+reference, are left out rather than compared as run in no time, and the output says where
+along the reference the comparison starts.
 
 ## Parts
 

@@ -75,7 +75,9 @@ type Options struct {
 	MinCoverage float64
 }
 
-func (o Options) withDefaults() Options {
+// WithDefaults is o with every value left at zero given its default, as
+// matching takes it.
+func (o Options) WithDefaults() Options {
 	if o.Step <= 0 {
 		o.Step = 10
 	}
@@ -166,7 +168,7 @@ type Stretch struct {
 // parkruns of one course in a morning. References whose bounds miss the
 // activity's are not aligned at all.
 func Find(activity *course.Course, refs []Reference, o Options) []Match {
-	o = o.withDefaults()
+	o = o.WithDefaults()
 	a := Resample(activity, o.Step)
 	if len(a) < 2 {
 		return nil
@@ -358,6 +360,22 @@ func standstills(a, r []Sample, pairs [][2]int, ad []float64) []Stop {
 		last = i
 	}
 	return out
+}
+
+// Stops are where a course with times stood still, placed along the course
+// itself: the stops of a reference run, say, which a comparison with it
+// needs as much as the activity's. Found the same way, from samples of it
+// step metres apart; Off is always 0.
+func Stops(c *course.Course, step float64) []Stop {
+	if !c.Timed {
+		return nil
+	}
+	s := Resample(c, step)
+	pairs := make([][2]int, len(s))
+	for i := range s {
+		pairs[i] = [2]int{i, i}
+	}
+	return standstills(s, s, pairs, make([]float64, len(s)))
 }
 
 // stopNear is how little the activity may have moved between two stops for

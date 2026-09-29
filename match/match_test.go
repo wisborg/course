@@ -271,3 +271,20 @@ func TestArrivals(t *testing.T) {
 		t.Errorf("500 m in is placed %.0f m east", (arr[50].Lon-20)/east)
 	}
 }
+
+// A course's own stops are found along itself, the way an activity's are
+// along a reference; a course with no times has none.
+func TestStops(t *testing.T) {
+	c := path(0, [2]float64{0, 0}, [2]float64{1000, 0})
+	for i := 300; i < len(c.Points); i++ { // 600 m along
+		c.Points[i].Elapsed += 3 * time.Minute
+	}
+	stops := Stops(c, 10)
+	if len(stops) != 1 || math.Abs(stops[0].At-600) > 10 || stops[0].Duration < 3*time.Minute || stops[0].Duration > 3*time.Minute+10*time.Second || stops[0].Off != 0 {
+		t.Errorf("stops %+v; want three minutes, 600 m along", stops)
+	}
+	c.Timed = false
+	if stops := Stops(c, 10); len(stops) != 0 {
+		t.Errorf("an untimed course has stops %+v", stops)
+	}
+}
