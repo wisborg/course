@@ -68,6 +68,20 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
+### References
+
+```
+./course map run.fit --reference other-run.fit --reference official-course.gpx
+./course map flight.kml --great-circle
+```
+
+`--reference` draws another course beside this one for comparison -- any file `course` reads,
+repeatable -- and `--great-circle` the shortest way over the globe between the course's start
+and finish. Each is dashed, under the course, in a colour of its own, and a legend in the top
+left says which line is which. The view holds the course and all of them. Storing references
+by name, and matching activities against them, are planned in
+[docs/references.md](docs/references.md).
+
 ## Fetching what the store lacks
 
 Both commands check the store before they read it, and offer to fetch what is missing --

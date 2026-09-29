@@ -32,6 +32,8 @@ var mapOpts struct {
 	yes           bool
 	language      string
 	fonts         []string
+	references    []string
+	greatCircle   bool
 }
 
 var mapCmd = &cobra.Command{
@@ -70,6 +72,8 @@ func init() {
 	f.StringVar(&mapOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.BoolVar(&mapOpts.yes, "yes", false, "fetch what the store lacks without asking")
 	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
+	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a FIT, GPX, TCX, KML or KMZ file; repeat for several")
+	f.BoolVar(&mapOpts.greatCircle, "great-circle", false, "draw the great circle between the course's start and finish, dashed: the shortest way over the globe")
 	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
 }
@@ -94,11 +98,14 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	out := mapOpts.out
 	if out == "" {
-		base := filepath.Base(args[0])
-		out = strings.TrimSuffix(base, filepath.Ext(base)) + ".png"
+		out = nameOf(args[0]) + ".png"
+	}
+	refs, err := loadReferences(c, mapOpts.references, mapOpts.greatCircle)
+	if err != nil {
+		return err
 	}
 
-	view, cropped := render.Fit(extent(c), mapOpts.width, mapOpts.height, maxMapZoom)
+	view, cropped := render.Fit(extent(c, refs), mapOpts.width, mapOpts.height, maxMapZoom)
 	errw := cmd.ErrOrStderr()
 	if cropped {
 		fmt.Fprintf(errw, "course: the course is wider than the map at this size; it is drawn cropped\n")
@@ -126,9 +133,20 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	scale := float64(max(view.Width, view.Height)) / 1000
 	face := faceAt(baseTextSize * scale)
-	drawing := routemap.Drawing(c, view, routemap.InksFor(palette, overlay), scale)
+	inks := routemap.InksFor(palette, overlay)
+	drawing := routemap.Drawing(c, view, inks, scale)
+	// The references first, so the course is drawn over them.
+	refInks := routemap.ReferenceInks(palette)
+	drawing.Lines = append(routemap.ReferenceLines(refs, refInks, inks.Halo, scale), drawing.Lines...)
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
+	}
+	if len(refs) > 0 {
+		legend := []entry{{name: nameOf(args[0]), ink: inks.Route}}
+		for i, r := range refs {
+			legend = append(legend, entry{name: r.Name, ink: refInks[i%len(refInks)], dashed: true})
+		}
+		drawLegend(img, legend, face, scale)
 	}
 	render.DrawCredit(img, manifest.Attribution, face)
 	if err := writePNG(out, img); err != nil {
@@ -160,14 +178,52 @@ func paletteNamed(name string) (render.Palette, render.Overlay, error) {
 	return render.Palette{}, render.Overlay{}, fmt.Errorf("--palette %q is not light or dark", name)
 }
 
-// extent is the rectangle the course covers, with a few hundred metres round
-// a course that stands still -- one fix, or a treadmill's worth of the same
-// one -- so it is a place on a map and not a point at zoom 15.
-func extent(c *course.Course) render.Bounds {
+// nameOf is a file's name without its directory or extension: what a course
+// read from it is called on a map.
+func nameOf(path string) string {
+	base := filepath.Base(path)
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// loadReferences reads the references to draw beside c: each file given,
+// named for it, and the great circle between c's ends when asked for.
+func loadReferences(c *course.Course, files []string, greatCircle bool) ([]routemap.Reference, error) {
+	var refs []routemap.Reference
+	for _, f := range files {
+		rc, err := course.Read(f)
+		if err != nil {
+			return nil, fmt.Errorf("--reference %s: %w", f, err)
+		}
+		if len(rc.Points) < 2 {
+			return nil, fmt.Errorf("--reference %s has no line to draw", f)
+		}
+		refs = append(refs, routemap.FromCourse(nameOf(f), rc))
+	}
+	if greatCircle {
+		gc, ok := routemap.GreatCircle(c)
+		if !ok {
+			return nil, errors.New("--great-circle: the course ends where it started, and has no great circle")
+		}
+		refs = append(refs, gc)
+	}
+	return refs, nil
+}
+
+// extent is the rectangle the course and its references cover -- a reference
+// that goes where the course did not is on the picture too -- with a few
+// hundred metres round a course that stands still, one fix or a treadmill's
+// worth of the same one, so it is a place on a map and not a point at zoom 15.
+func extent(c *course.Course, refs []routemap.Reference) render.Bounds {
 	b := render.Bounds{West: 180, South: 90, East: -180, North: -90}
 	for _, p := range c.Points {
 		b.West, b.East = min(b.West, p.Lon), max(b.East, p.Lon)
 		b.South, b.North = min(b.South, p.Lat), max(b.North, p.Lat)
+	}
+	for _, r := range refs {
+		for _, p := range r.Points {
+			b.West, b.East = min(b.West, p.Lon), max(b.East, p.Lon)
+			b.South, b.North = min(b.South, p.Lat), max(b.North, p.Lat)
+		}
 	}
 	if course.Metres(b.South, b.West, b.North, b.East) < 500 {
 		const pad = 0.003
