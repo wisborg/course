@@ -93,3 +93,34 @@ func (p *Profile) Faster(around float64) []float64 {
 	}
 	return out
 }
+
+// Split is a stretch of the reference and how long each took over it.
+type Split struct {
+	// From and To are where it starts and ends, in metres along the
+	// reference.
+	From, To float64
+	// Run and Ref are how long each took over it.
+	Run, Ref time.Duration
+	// Gap is how far the run was behind the reference at its end: positive
+	// behind, negative ahead.
+	Gap time.Duration
+}
+
+// Splits are the compared stretch in pieces every metres long along the
+// reference, the last taking what is left. Measured along the reference, not
+// along the run: a split is the same piece of ground for both, however far
+// either ran over it.
+func (p *Profile) Splits(every float64) []Split {
+	last := len(p.Run) - 1
+	k := max(int(math.Round(every/p.Step)), 1)
+	var out []Split
+	for from := 0; from < last; from += k {
+		to := min(from+k, last)
+		out = append(out, Split{
+			From: float64(from) * p.Step, To: float64(to) * p.Step,
+			Run: p.Run[to] - p.Run[from], Ref: p.Ref[to] - p.Ref[from],
+			Gap: p.Gap(to),
+		})
+	}
+	return out
+}

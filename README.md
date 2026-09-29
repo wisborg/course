@@ -105,10 +105,14 @@ missed the course or left it; `map --reference auto` draws every reference it ma
 a stored reference or a file -- place by place, from blue (15% slower) to red (15% faster),
 and says how far ahead or behind it finished. The two are lined up by where on the course
 each was, so a wide corner or a stop does not put them out of step. It needs the other run's
-times, so an official course file will not do.
+times, so a course file without them will not do.
+
+`compare` says the same in words: split by split along the course, how long each took,
+and how far ahead or behind the run was at the end of each, with any stops listed under.
 
 ```
 ./course map today.fit --compare rhodes
+./course compare today.fit --reference rhodes --split 0.5
 ```
 
 The design and what was measured on real courses are in

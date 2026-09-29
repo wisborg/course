@@ -193,7 +193,10 @@ reference, and colours the course by the run's pace against the reference's ther
 of their speeds, over 30 m either side, on a scale from 15% slower (blue) to 15% faster
 (red). The warm-up and cool-down outside the matched stretch stay thin and grey. The report
 says how far ahead or behind the run finished. It needs the reference to keep its times,
-which the original file does; an official course file has none, and is refused.
+which the original file does; a course file without them is refused. The organisers'
+`Three Bridges.gpx` turned out to have times, at a steady 12 min/km from whatever planned it,
+and is compared with as if somebody had walked it: nothing in a file tells planned times
+from recorded ones.
 
 How finely the colours change is the drawing's to decide, not the comparison's: osmbase's
 `render.Gradient` takes a value at every point and colours pieces a few pixels long, each
@@ -201,8 +204,14 @@ the length-weighted average of its values, so a whole marathon and one corner of
 are both coloured as finely as the picture can show and no finer. The same drawing is meant
 for pace, height or power along a single run later.
 
-Still to come: `course compare`, the same comparison as text -- split by kilometre or by
-stretch, with the running gap.
+`course compare run.fit --reference "Rhodes parkrun"` is the same comparison in words: splits
+of `--split` kilometres (1 by default) measured along the reference -- the same ground for
+both, however far either ran over it -- with each run's time over the split, which was
+faster, and the running gap at its end; then the run's stops, which are usually why a split
+was slow. Text, CSV, JSON or YAML, like `match`.
+
+Not yet: the reference's own stops. A reference run that stopped makes the run look fast
+over that split, and nothing says why.
 
 ## Parts
 
@@ -212,7 +221,7 @@ stretch, with the running gap.
 | 1 | Draw a reference from a file, and the great circle | course | `--reference FILE` and `--great-circle` draw dashed, under the course, with a legend; the view holds both |
 | 2 | The reference store | course | `course reference add/list/show/remove`, crops by distance or time, names and aliases in `--reference` |
 | 3 | Matching | course | `course match`, whole and partial, `--reference auto` |
-| 4 | Comparison | osmbase render, course | `map --compare` colours the course by pace against a reference (built); `course compare` in text (to come) |
+| 4 | Comparison | osmbase render, course | `map --compare` colours the course by pace against a reference; `course compare` gives splits and the running gap |
 
 ## Courses to test against
 

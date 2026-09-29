@@ -150,3 +150,31 @@ func TestAgainstTakesTheBetterOfTwoRuns(t *testing.T) {
 		t.Errorf("compared from %v into the run, want the second time round, from 20m", p.Match.FromTime)
 	}
 }
+
+// Splits are every so many metres of the reference, the last what is left,
+// each with both runs' times over it and the gap at its end.
+func TestSplits(t *testing.T) {
+	s := time.Second
+	p := &Profile{
+		Step: 10,
+		Run:  []time.Duration{0, 10 * s, 20 * s, 35 * s, 50 * s, 60 * s},
+		Ref:  []time.Duration{0, 10 * s, 20 * s, 30 * s, 40 * s, 50 * s},
+	}
+	got := p.Splits(20)
+	want := []Split{
+		{From: 0, To: 20, Run: 20 * s, Ref: 20 * s, Gap: 0},
+		{From: 20, To: 40, Run: 30 * s, Ref: 20 * s, Gap: 10 * s},
+		{From: 40, To: 50, Run: 10 * s, Ref: 10 * s, Gap: 10 * s},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("splits = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("split %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if got := (&Profile{Step: 10, Run: []time.Duration{0}, Ref: []time.Duration{0}}).Splits(20); len(got) != 0 {
+		t.Errorf("splits of one point = %+v, want none", got)
+	}
+}

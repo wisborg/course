@@ -298,17 +298,8 @@ func compareWith(c *course.Course, name string, scale float64) (*comparison, err
 	return &comparison{name: refName, profile: p, gradient: g, ramp: compareRamp}, nil
 }
 
-// gapText is a gap in words: ahead, behind, or level.
-func gapText(gap time.Duration) string {
-	gap = gap.Round(time.Second)
-	switch {
-	case gap > 0:
-		return fmt.Sprintf("%v behind at the end", gap)
-	case gap < 0:
-		return fmt.Sprintf("%v ahead at the end", -gap)
-	}
-	return "level at the end"
-}
+// gapText is the gap at the end of a comparison, in words.
+func gapText(gap time.Duration) string { return gapWords(gap) + " at the end" }
 
 // resolveCourse is the course a reference names: a file if there is one by
 // that name -- a path is unambiguous, and a reference stored as "run.gpx"
