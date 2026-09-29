@@ -42,7 +42,7 @@ func TestMatchCommand(t *testing.T) {
 	resetNow(matchCmd)
 	out, err = run(t, "match", "--references", refs, "--format", "json", run1)
 	var ms []map[string]any
-	if err != nil || json.Unmarshal([]byte(out), &ms) != nil || len(ms) != 2 || ms[0]["coverage"] != 1.0 || ms[0]["reference"] != "First" || ms[0]["from_s"] == nil {
+	if err != nil || json.Unmarshal([]byte(out), &ms) != nil || len(ms) != 2 || ms[0]["coverage"] != 1.0 || ms[0]["reference"] != "First" || ms[0]["from_s"] == nil || ms[0]["stops"] == nil {
 		t.Fatalf("match as JSON: %v\n%s", err, out)
 	}
 	resetNow(matchCmd)

@@ -196,3 +196,52 @@ func TestMatchesAreInTheOrderTheyHappened(t *testing.T) {
 		t.Errorf("matches %+v; want A then B", ms)
 	}
 }
+
+// Standing still for five minutes 20 m off the course -- within the
+// tolerance, so no detour -- is a stop, found by time, where it was along
+// the course -- the time between two samples 10 m apart, so a few seconds of
+// moving with it; a pause of a few seconds is not.
+func TestAStopIsFoundByTime(t *testing.T) {
+	out := path(0, [2]float64{0, 0}, [2]float64{400, 0}, [2]float64{400, -20})
+	back := path(0, [2]float64{400, -20}, [2]float64{400, 0}, [2]float64{1000, 0}, [2]float64{1000, 8}, [2]float64{0, 8})
+	run := join(out, back)
+	// Five minutes at the toilet, 20 m off the course.
+	for i := len(out.Points); i < len(run.Points); i++ {
+		run.Points[i].Elapsed += 5 * time.Minute
+	}
+	ms := find(t, run)
+	if len(ms) != 1 || len(ms[0].Excursions) != 0 {
+		t.Fatalf("matches %+v; want one, with no detour", ms)
+	}
+	stops := ms[0].Stops
+	if len(stops) != 1 || stops[0].Duration < 5*time.Minute || stops[0].Duration > 5*time.Minute+10*time.Second ||
+		math.Abs(stops[0].At-400) > 20 || stops[0].Off < 15 || stops[0].Off > 25 {
+		t.Errorf("stops %+v; want five minutes, 400 m along, about 20 m off", stops)
+	}
+
+	brief := join(out, back)
+	for i := len(out.Points); i < len(brief.Points); i++ {
+		brief.Points[i].Elapsed += 20 * time.Second
+	}
+	if ms := find(t, brief); len(ms) != 1 || len(ms[0].Stops) != 0 {
+		t.Errorf("a 20-second pause is a stop: %+v", ms)
+	}
+}
+
+// Two stops at one place a minute apart, with a few steps between, are one.
+func TestAStopWithStepsInItIsOneStop(t *testing.T) {
+	out := path(0, [2]float64{0, 0}, [2]float64{400, 0}, [2]float64{400, -20})
+	shuffle := path(0, [2]float64{400, -20}, [2]float64{400, -40}, [2]float64{400, -20})
+	back := path(0, [2]float64{400, -20}, [2]float64{400, 0}, [2]float64{1000, 0}, [2]float64{1000, 8}, [2]float64{0, 8})
+	run := join(out, shuffle, back)
+	for i := len(out.Points); i < len(run.Points); i++ {
+		run.Points[i].Elapsed += 2 * time.Minute
+	}
+	for i := len(out.Points) + len(shuffle.Points); i < len(run.Points); i++ {
+		run.Points[i].Elapsed += 2 * time.Minute
+	}
+	ms := find(t, run)
+	if len(ms) != 1 || len(ms[0].Stops) != 1 || ms[0].Stops[0].Duration < 4*time.Minute {
+		t.Errorf("stops %+v; want one of over four minutes", ms[0].Stops)
+	}
+}

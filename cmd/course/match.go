@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -28,7 +29,9 @@ var matchCmd = &cobra.Command{
 a parkrun inside a morning's run, both parkruns of a morning with the warm-up,
 the commute between them and the cool-down around them, an official race
 course -- and says how closely: how much of the course it covered, how far
-off it was, and where it missed the course or left it.
+off it was, where it missed the course or left it, and where it stopped for a
+minute or more -- a toilet, a drink station -- which is reported and never
+held against the match.
 
 It checks every stored reference ("course reference list"), or those named
 with --reference, stored or as files. The reference is aligned with the
@@ -90,6 +93,14 @@ type jsonMatch struct {
 	WorstM     float64       `json:"worst_m"`
 	Missed     []jsonStretch `json:"missed"`
 	Excursions []jsonStretch `json:"excursions"`
+	Stops      []jsonStop    `json:"stops"`
+}
+
+type jsonStop struct {
+	AtM       float64 `json:"at_m"`
+	FromS     float64 `json:"from_s"`
+	DurationS float64 `json:"duration_s"`
+	OffM      float64 `json:"off_m"`
 }
 
 // jsonMatches are the matches as the other commands' JSON is written: names
@@ -108,7 +119,10 @@ func jsonMatches(ms []match.Match, timed bool) []jsonMatch {
 		j := jsonMatch{
 			Reference: m.Reference, FromM: round1(m.From), ToM: round1(m.To), Coverage: m.Coverage,
 			MeanM: round1(m.Mean), MedianM: round1(m.Median), WorstM: round1(m.Worst),
-			Missed: stretches(m.Missed), Excursions: stretches(m.Excursions),
+			Missed: stretches(m.Missed), Excursions: stretches(m.Excursions), Stops: []jsonStop{},
+		}
+		for _, st := range m.Stops {
+			j.Stops = append(j.Stops, jsonStop{AtM: round1(st.At), FromS: math.Round(st.From.Seconds()), DurationS: math.Round(st.Duration.Seconds()), OffM: round1(st.Off)})
 		}
 		if timed {
 			from, to := m.FromTime.Seconds(), m.ToTime.Seconds()
@@ -205,7 +219,7 @@ func writeMatches(w io.Writer, ms []match.Match, timed bool) {
 	}
 	fmt.Fprint(w, matchTable(ms, timed).String())
 	for _, m := range ms {
-		if len(m.Missed) == 0 && len(m.Excursions) == 0 {
+		if len(m.Missed) == 0 && len(m.Excursions) == 0 && len(m.Stops) == 0 {
 			continue
 		}
 		fmt.Fprintf(w, "\n%s, %.2f-%.2f km:\n", m.Reference, m.From/1000, m.To/1000)
@@ -214,6 +228,9 @@ func writeMatches(w io.Writer, ms []match.Match, timed bool) {
 		}
 		for _, s := range m.Excursions {
 			fmt.Fprintf(w, "  left it from %.2f to %.2f km into the stretch, up to %.0f m off\n", s.From/1000, s.To/1000, s.Farthest)
+		}
+		for _, s := range m.Stops {
+			fmt.Fprintf(w, "  stopped at %s for %s, %.2f km along the course, %.0f m from it\n", clock(s.From), s.Duration.Round(time.Second), s.At/1000, s.Off)
 		}
 	}
 }

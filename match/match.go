@@ -117,7 +117,27 @@ type Match struct {
 	// Near -- a detour, a changed course; Excursions the stretches of the
 	// activity that left the reference -- a detour of its own, a stop.
 	Missed, Excursions []Stretch
+	// Stops are where an activity with times stood still for at least
+	// minStop: a toilet, a drink station, a crossing.
+	Stops []Stop
 }
+
+// Stop is where the activity stood still: how far along the reference, when
+// in the activity and for how long, and how far from the course it was.
+//
+// Found by time, not by distance: a stop beside the course -- a toilet
+// twenty metres off it -- is within the tolerance and no detour, and is
+// seven minutes of the race.
+type Stop struct {
+	At       float64
+	From     time.Duration
+	Duration time.Duration
+	Off      float64
+}
+
+// minStop is the shortest stop reported. A runner waiting at a crossing is
+// a stop; the moment a watch takes to catch up is not.
+const minStop = time.Minute
 
 // Stretch is part of a course, in metres along it, and how far at most it
 // was from the other course.
@@ -267,9 +287,14 @@ func assess(a, r []Sample, o Options, aTimed, rTimed bool) Match {
 			near++
 		}
 	}
+	var stops []Stop
+	if aTimed {
+		stops = standstills(a, r, pairs, ad)
+	}
 	sorted := append([]float64(nil), rd...)
 	sort.Float64s(sorted)
 	return Match{
+		Stops:      stops,
 		Coverage:   float64(near) / float64(len(r)),
 		Median:     sorted[len(sorted)/2],
 		Worst:      sorted[len(sorted)-1],
@@ -277,6 +302,40 @@ func assess(a, r []Sample, o Options, aTimed, rTimed bool) Match {
 		Excursions: stretches(a, ad, o.Near, aTimed),
 	}
 }
+
+// standstills are the stops in a stretch of the activity: the samples are a
+// fixed distance apart, so standing still is a long time between two of
+// them. Each is placed on the reference where its sample is aligned.
+func standstills(a, r []Sample, pairs [][2]int, ad []float64) []Stop {
+	onRef := make([]int, len(a))
+	for _, p := range pairs {
+		onRef[p[0]] = p[1] // the pairs run backwards: the first alignment of each is kept
+	}
+	var out []Stop
+	last := -1 // the sample the last stop ended at
+	for i := 1; i < len(a); i++ {
+		gap := a[i].Elapsed - a[i-1].Elapsed
+		if gap < minStop {
+			continue
+		}
+		s := Stop{At: r[onRef[i-1]].Along - r[0].Along, From: a[i-1].Elapsed, Duration: gap, Off: math.Max(ad[i-1], ad[i])}
+		// A few steps in the middle of a stop -- to the basin and back --
+		// split it in two, however long they took; it is one stop.
+		if n := len(out); n > 0 && a[i-1].Along-a[last].Along < stopNear {
+			prev := &out[n-1]
+			prev.Duration = s.From + s.Duration - prev.From
+			prev.Off = math.Max(prev.Off, s.Off)
+		} else {
+			out = append(out, s)
+		}
+		last = i
+	}
+	return out
+}
+
+// stopNear is how little the activity may have moved between two stops for
+// them to be one, in metres.
+const stopNear = 50.0
 
 // alignment is the dynamic-time-warping alignment of a whole stretch with the
 // whole reference, as pairs of their indices in order: the one align found,
