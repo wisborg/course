@@ -127,6 +127,23 @@ course map flight.kml --great-circle
 - **The great circle** is the shortest path over the globe between start and finish, drawn
   as a reference named "Great circle", with points every few tens of kilometres along it.
 
+### Seeing what is underneath
+
+As built, the course is drawn narrower when there are references, so one that follows it
+closely shows along its edges. Drawing the references over the course instead, translucent,
+was tried and buried the course under them. Neither is good enough: the lines hide the map
+beneath them -- the paths, the names -- and a reference that follows the course is only a
+coloured edge. To try later:
+
+- **Lighter lines altogether**: thinner and translucent strokes, lighter halos, so the map
+  shows through.
+- **A reference drawn only where it leaves the course**, by more than a few metres: where
+  the two coincide there is nothing to see, and where they part the difference stands alone.
+  It needs each point's distance from the reference, which matching (part 3) computes, so it
+  follows that.
+- **Parallel lines**: the reference offset beside the course, as a transit map draws lines
+  that share a road.
+
 ### First, the 180° meridian
 
 A great circle across the Pacific crosses 180°, and so does the Australia-to-USA flight in

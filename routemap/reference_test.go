@@ -92,3 +92,24 @@ func TestReferenceInksReadOnTheirMap(t *testing.T) {
 		}
 	}
 }
+
+// With references, they go under the course and the course is narrowed so a
+// reference that follows it shows along its edges; with none, nothing
+// changes.
+func TestWithReferences(t *testing.T) {
+	course := render.Drawing{Lines: []render.Line{{Points: []render.Coord{{Lat: 0, Lon: 0}, {Lat: 0, Lon: 1}}, Width: 4, Halo: 2}}}
+	if got := WithReferences(course, nil, nil, render.LightPalette().Background, 1); len(got.Lines) != 1 || got.Lines[0].Width != 4 {
+		t.Errorf("with no references the drawing changed: %+v", got.Lines)
+	}
+	refs := []Reference{{Name: "r", Points: []render.Coord{{Lat: 0, Lon: 0}, {Lat: 0, Lon: 1}}}}
+	got := WithReferences(course, refs, ReferenceInks(render.LightPalette()), render.LightPalette().Background, 1)
+	if len(got.Lines) != 2 || len(got.Lines[0].Dash) == 0 || len(got.Lines[1].Dash) != 0 {
+		t.Fatalf("lines %+v; want the reference first, then the course", got.Lines)
+	}
+	if c, r := got.Lines[1], got.Lines[0]; c.Width+2*c.Halo >= r.Width+2*r.Halo || c.Width >= 4 {
+		t.Errorf("the course is %v wide with a %v halo over a %v reference with a %v halo; want it narrower, edges showing", c.Width, c.Halo, r.Width, r.Halo)
+	}
+	if course.Lines[0].Width != 4 {
+		t.Error("the course's own drawing was changed in place")
+	}
+}

@@ -123,3 +123,27 @@ func ReferenceLines(refs []Reference, inks []color.RGBA, halo color.RGBA, scale 
 	}
 	return out
 }
+
+// thinned is how much of its usual width the course's line is drawn at when
+// references are drawn under it: enough narrower that a reference following
+// it shows along both its edges, rather than lying hidden beneath it.
+const thinned = 0.55
+
+// WithReferences is a course's drawing with references under it: the
+// references first, so the course is drawn over them, and the course's lines
+// narrowed, with their halos, so a reference that follows the course closely
+// shows along its edges. With no references the drawing is as it was.
+func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, halo color.RGBA, scale float64) render.Drawing {
+	lines := ReferenceLines(refs, inks, halo, scale)
+	if len(lines) == 0 {
+		return d
+	}
+	course := make([]render.Line, len(d.Lines))
+	for i, l := range d.Lines {
+		l.Width *= thinned
+		l.Halo *= thinned
+		course[i] = l
+	}
+	d.Lines = append(lines, course...)
+	return d
+}

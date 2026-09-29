@@ -135,9 +135,8 @@ func runMap(cmd *cobra.Command, args []string) error {
 	face := faceAt(baseTextSize * scale)
 	inks := routemap.InksFor(palette, overlay)
 	drawing := routemap.Drawing(c, view, inks, scale)
-	// The references first, so the course is drawn over them.
 	refInks := routemap.ReferenceInks(palette)
-	drawing.Lines = append(routemap.ReferenceLines(refs, refInks, inks.Halo, scale), drawing.Lines...)
+	drawing = routemap.WithReferences(drawing, refs, refInks, inks.Halo, scale)
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
 	}
