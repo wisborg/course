@@ -1,0 +1,219 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"math"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/wisborg/output"
+	"github.com/wisborg/output/table"
+
+	"github.com/wisborg/course"
+	"github.com/wisborg/course/match"
+)
+
+var matchOpts struct {
+	references []string
+	near       float64
+	format     formatFlag
+}
+
+var matchCmd = &cobra.Command{
+	Use:   "match ACTIVITY [ACTIVITY ...]",
+	Short: "Find where an activity followed reference courses",
+	Long: `match finds every stretch of an activity that followed a reference course --
+a parkrun inside a morning's run, both parkruns of a morning with the warm-up,
+the commute between them and the cool-down around them, an official race
+course -- and says how closely: how much of the course it covered, how far
+off it was, and where it missed the course or left it.
+
+It checks every stored reference ("course reference list"), or those named
+with --reference, stored or as files. The reference is aligned with the
+activity in order, so the way back of an out-and-back course is not taken for
+the way out, and a course run backwards is not a match.
+
+--near is how far from the course is still on it, in metres. GPS among tall
+buildings wanders up to about 20 m from a course followed exactly; the
+default, 25, is just above that.`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: runMatch,
+}
+
+func init() {
+	f := matchCmd.Flags()
+	f.StringArrayVar(&matchOpts.references, "reference", nil, "a reference to match against, stored or a file; repeat for several (default: every stored reference)")
+	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
+	f.Float64Var(&matchOpts.near, "near", 0, "how far from a course, in metres, is still on it (default 25)")
+	matchOpts.format = formatFlag{Format: output.Text}
+	f.Var(&matchOpts.format, "format", "output format: text, csv, json or yaml")
+	root.AddCommand(matchCmd)
+}
+
+func runMatch(cmd *cobra.Command, args []string) error {
+	c, err := course.Read(args...)
+	if err != nil {
+		return err
+	}
+	refs, err := matchReferences(matchOpts.references)
+	if err != nil {
+		return err
+	}
+	if len(refs) == 0 {
+		return fmt.Errorf("no references to match against; store one with \"course reference add\", or name a file with --reference")
+	}
+	ms := match.Find(c, refs, match.Options{Near: matchOpts.near})
+	if matchOpts.format.Format == output.Text {
+		writeMatches(cmd.OutOrStdout(), ms, c.Timed)
+		return nil
+	}
+	return output.Document{Data: jsonMatches(ms, c.Timed), Table: matchTable(ms, c.Timed)}.Write(cmd.OutOrStdout(), matchOpts.format.Format)
+}
+
+type jsonStretch struct {
+	FromM     float64 `json:"from_m"`
+	ToM       float64 `json:"to_m"`
+	FarthestM float64 `json:"farthest_m"`
+}
+
+type jsonMatch struct {
+	Reference  string        `json:"reference"`
+	FromM      float64       `json:"from_m"`
+	ToM        float64       `json:"to_m"`
+	FromS      *float64      `json:"from_s,omitempty"`
+	ToS        *float64      `json:"to_s,omitempty"`
+	Coverage   float64       `json:"coverage"`
+	MeanM      float64       `json:"mean_m"`
+	MedianM    float64       `json:"median_m"`
+	WorstM     float64       `json:"worst_m"`
+	Missed     []jsonStretch `json:"missed"`
+	Excursions []jsonStretch `json:"excursions"`
+}
+
+// jsonMatches are the matches as the other commands' JSON is written: names
+// in snake case, distances in metres and times in seconds -- and no time for
+// an activity that has none.
+func jsonMatches(ms []match.Match, timed bool) []jsonMatch {
+	stretches := func(ss []match.Stretch) []jsonStretch {
+		out := []jsonStretch{}
+		for _, s := range ss {
+			out = append(out, jsonStretch{FromM: round1(s.From), ToM: round1(s.To), FarthestM: round1(s.Farthest)})
+		}
+		return out
+	}
+	out := []jsonMatch{}
+	for _, m := range ms {
+		j := jsonMatch{
+			Reference: m.Reference, FromM: round1(m.From), ToM: round1(m.To), Coverage: m.Coverage,
+			MeanM: round1(m.Mean), MedianM: round1(m.Median), WorstM: round1(m.Worst),
+			Missed: stretches(m.Missed), Excursions: stretches(m.Excursions),
+		}
+		if timed {
+			from, to := m.FromTime.Seconds(), m.ToTime.Seconds()
+			j.FromS, j.ToS = &from, &to
+		}
+		out = append(out, j)
+	}
+	return out
+}
+
+func round1(v float64) float64 { return math.Round(v*10) / 10 }
+
+// matchReferences are the references named, stored or files, or every stored
+// reference when none is named.
+func matchReferences(names []string) ([]match.Reference, error) {
+	if len(names) == 0 {
+		s, err := openReferences()
+		if err != nil {
+			return nil, err
+		}
+		all, err := s.List()
+		if err != nil {
+			return nil, err
+		}
+		var out []match.Reference
+		for _, m := range all {
+			c, err := m.Course()
+			if err != nil {
+				return nil, fmt.Errorf("the reference %q: %w", m.Name, err)
+			}
+			out = append(out, match.Reference{Name: m.Name, Course: c})
+		}
+		return out, nil
+	}
+	var out []match.Reference
+	for _, n := range names {
+		if info, err := os.Stat(n); err == nil && !info.IsDir() {
+			c, err := course.Read(n)
+			if err != nil {
+				return nil, fmt.Errorf("--reference %s: %w", n, err)
+			}
+			out = append(out, match.Reference{Name: nameOf(n), Course: c})
+			continue
+		}
+		s, err := openReferences()
+		if err != nil {
+			return nil, err
+		}
+		m, err := s.Find(n)
+		if err != nil {
+			return nil, fmt.Errorf("--reference %s: no such file, and %w", n, err)
+		}
+		c, err := m.Course()
+		if err != nil {
+			return nil, fmt.Errorf("--reference %s: %w", n, err)
+		}
+		out = append(out, match.Reference{Name: m.Name, Course: c})
+	}
+	return out, nil
+}
+
+func matchTable(ms []match.Match, timed bool) *table.Table {
+	cols := []table.Column{
+		{Header: "reference"},
+		{Header: "from km", Align: table.Right, Format: "%.2f"},
+		{Header: "to km", Align: table.Right, Format: "%.2f"},
+	}
+	if timed {
+		cols = append(cols, table.Column{Header: "from", Align: table.Right}, table.Column{Header: "to", Align: table.Right})
+	}
+	cols = append(cols,
+		table.Column{Header: "covered", Align: table.Right, Format: "%.0f%%"},
+		table.Column{Header: "median m", Align: table.Right, Format: "%.0f"},
+		table.Column{Header: "worst m", Align: table.Right, Format: "%.0f"},
+	)
+	t := table.New(cols...)
+	for _, m := range ms {
+		row := []any{m.Reference, m.From / 1000, m.To / 1000}
+		if timed {
+			row = append(row, clock(m.FromTime), clock(m.ToTime))
+		}
+		row = append(row, 100*m.Coverage, m.Median, m.Worst)
+		t.MustAppend(row...)
+	}
+	return t
+}
+
+// writeMatches is the matches for a person: the table, then under it each
+// match's detours, which a table has no room for.
+func writeMatches(w io.Writer, ms []match.Match, timed bool) {
+	if len(ms) == 0 {
+		fmt.Fprintln(w, "no reference matched")
+		return
+	}
+	fmt.Fprint(w, matchTable(ms, timed).String())
+	for _, m := range ms {
+		if len(m.Missed) == 0 && len(m.Excursions) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "\n%s, %.2f-%.2f km:\n", m.Reference, m.From/1000, m.To/1000)
+		for _, s := range m.Missed {
+			fmt.Fprintf(w, "  missed the course from %.2f to %.2f km along it, up to %.0f m off\n", s.From/1000, s.To/1000, s.Farthest)
+		}
+		for _, s := range m.Excursions {
+			fmt.Fprintf(w, "  left it from %.2f to %.2f km into the stretch, up to %.0f m off\n", s.From/1000, s.To/1000, s.Farthest)
+		}
+	}
+}

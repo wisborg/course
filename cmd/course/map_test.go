@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/wisborg/course"
 )
 
 // resetFlags puts a command's flags back to their defaults after a test ran
@@ -165,3 +167,23 @@ func anyInk(img image.Image, r image.Rectangle) bool {
 }
 
 func near(a uint32, b uint32) bool { return a+12 >= b && a <= b+12 }
+
+func ftoa6(f float64) string { return fmt.Sprintf("%.6f", f) }
+
+func stamp(s int) string { return fmt.Sprintf("2026-04-02T%02d:%02d:%02dZ", 6+s/3600, s/60%60, s%60) }
+
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustRead(t *testing.T, path string) *course.Course {
+	t.Helper()
+	c, err := course.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}

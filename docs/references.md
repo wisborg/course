@@ -5,7 +5,7 @@ against. The Rhodes parkrun, run eighty times, drawn over the eighty-first; a st
 from home; for a flight, the great circle between where it took off and where it landed.
 The reference is drawn dashed, in an ink of its own, under the course.
 
-This is the plan. Parts 0 to 2 are built; matching and comparison are next.
+This is the plan. Parts 0 to 3 are built; comparison is next.
 
 ## Where references come from
 
@@ -216,8 +216,32 @@ Real recordings, for checking by hand; never fixtures.
   and `TCS_Sydney_Marathon_2026_Course.gpx` for the 2025-08-31 marathon. Planned courses with
   no times: they test matching a plan against a recording, and deviations that are real.
 
+## What matching measured
+
+Built as subsequence dynamic time warping on points every 10 m, with each match's detours
+measured along the in-order alignment. On the courses above:
+
+- **The tolerance is 25 m.** The marathon, among the city's buildings, wanders up to about
+  20 m from its course followed exactly; at 15 m it reported 25 "detours", at 20 m seven, at
+  25 m one. The Rhodes runs other than the bridge closure are within 4-6 m.
+- **The bridge closure is found**: 92% of the course covered, a missed stretch from 0.65 to
+  1.03 km up to 87 m off, and the turnaround that day further north.
+- **Both parkruns of the two-parkrun morning are found where they were**, from 2.37 km and
+  from 11.20 km, and a Rhodes reference given alongside matches nothing.
+- **The official courses match their races completely.** Three Bridges shows nothing 25 m
+  off for more than a moment -- the road-work detours were near the course or are in the
+  file -- and the marathon one stretch 32 m off at 9.2 km, which may be the course changing
+  between the 2025 run and the 2026 file.
+- **Measured nearest-anywhere, a detour vanished** on an out-and-back course -- the way
+  back runs beside the way out. So coverage and detours are measured along the alignment,
+  in order; which also makes a loop run backwards fail to match, without a check of its
+  own.
+- **A stray fix is not a detour.** One fix 40 m off makes a spike 80 m long, longer than a
+  short detour, so an excursion in an activity with times must last 10 s; a stop or a
+  detour lasts tens.
+- A marathon against its course takes under half a second.
+
 ## Open questions
 
-- **Matching tolerance**: 25 m is a starting guess for GPS on foot; to be settled by
-  experiment on the courses above -- the closed bridge and the detours are the cases that
-  say how tight it can be.
+- **The rendering**: a reference that follows the course is hidden under it; see "Seeing
+  what is underneath".

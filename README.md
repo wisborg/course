@@ -90,8 +90,19 @@ References you use often can be stored by name:
 
 A stored reference is the original file, unchanged, with a note of which part of it is the
 course -- `--from`/`--to` in time, or `--from-km`/`--to-km` -- kept under `course/references`
-in your configuration directory (`--references` for elsewhere). Matching activities against
-them is planned in [docs/references.md](docs/references.md).
+in your configuration directory (`--references` for elsewhere).
+
+`match` finds where an activity followed stored references -- a parkrun inside a longer run,
+both parkruns of a morning, an official race course -- and how closely, with where it
+missed the course or left it; `map --reference auto` draws every reference it matched.
+
+```
+./course match morning.fit
+./course map morning.fit --reference auto
+```
+
+The design and what was measured on real courses are in
+[docs/references.md](docs/references.md).
 
 ## Fetching what the store lacks
 
