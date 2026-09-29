@@ -19,3 +19,6 @@ example_files/
 
 # The built command.
 /course
+
+# Finder's folder settings, which macOS writes into any directory it opens.
+.DS_Store
