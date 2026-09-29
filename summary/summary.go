@@ -767,6 +767,28 @@ func better(a, b locate.Match) bool {
 	return a.DistanceM < b.DistanceM
 }
 
+// finest is the finest land level a row names, or Country when it names
+// nothing on land.
+func (r Row) finest() locate.Level {
+	f := locate.Country
+	for _, m := range r.Places {
+		if m.Level != locate.Water && m.Level > f {
+			f = m.Level
+		}
+	}
+	return f
+}
+
+// anyAt reports whether any row names a place at level l or finer.
+func (s *Summary) anyAt(l locate.Level) bool {
+	for _, r := range s.Rows {
+		if r.finest() >= l {
+			return true
+		}
+	}
+	return false
+}
+
 // Label is the most specific name a row has for the ground: its deepest
 // place on land, or the water it is over when it is over nothing else.
 //
@@ -796,7 +818,17 @@ func (r Row) Label() string {
 // airports at the ends of a flight beside the first and last names.
 func (s *Summary) OneLiner() string {
 	var parts []string
+	gaps := s.Depth == locate.Street && s.anyAt(locate.Area)
 	for _, r := range s.Rows {
+		// At street depth, a stretch on no named way and in no area is a gap
+		// between two that are -- a station concourse, an unnamed footpath
+		// -- and naming it by the suburb around it put "Hornsby" between two
+		// streets of a walk round Hornsby. The table keeps the row; the
+		// chain leaves it out. Only at street depth: areas are few, and at
+		// area depth the suburbs between two parks are where the course was.
+		if gaps && r.finest() < locate.Area {
+			continue
+		}
 		l := r.Label()
 		if l == "" || (len(parts) > 0 && parts[len(parts)-1] == l) {
 			continue

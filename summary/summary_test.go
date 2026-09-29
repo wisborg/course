@@ -485,3 +485,29 @@ func TestPrefixIsTheOnePlaceTheCourseWasIn(t *testing.T) {
 		t.Errorf("prefix %q for a course nine tenths in one town", s.Prefix)
 	}
 }
+
+// At street depth, a row on no named way and in no area is a gap in the
+// chain, not the suburb around it; at area depth or wider, or when no row
+// names a street or an area at all, every row is named as before.
+func TestOneLinerLeavesOutStretchesOnNoNamedWay(t *testing.T) {
+	row := func(levels ...locate.Match) Row { return Row{Places: levels} }
+	suburb := locate.Match{Level: locate.Neighbourhood, Name: "Suburb"}
+	street := func(n string) locate.Match { return locate.Match{Level: locate.Street, Name: n} }
+	s := &Summary{Depth: locate.Street, Rows: []Row{row(suburb, street("First Street")), row(suburb), row(suburb, street("Second Street"))}}
+	if got := s.OneLiner(); got != "First Street → Second Street" {
+		t.Errorf("street depth: %q", got)
+	}
+	s.Rows = []Row{row(suburb), row(suburb)}
+	if got := s.OneLiner(); got != "Suburb" {
+		t.Errorf("street depth with no street at all: %q", got)
+	}
+	s = &Summary{Depth: locate.Neighbourhood, Rows: []Row{row(suburb), row(locate.Match{Level: locate.Neighbourhood, Name: "Other"})}}
+	if got := s.OneLiner(); got != "Suburb → Other" {
+		t.Errorf("neighbourhood depth: %q", got)
+	}
+	park := locate.Match{Level: locate.Area, Name: "The Park"}
+	s = &Summary{Depth: locate.Area, Rows: []Row{row(suburb), row(suburb, park), row(locate.Match{Level: locate.Neighbourhood, Name: "Other"})}}
+	if got := s.OneLiner(); got != "Suburb → The Park → Other" {
+		t.Errorf("area depth, the suburbs either side of a park: %q", got)
+	}
+}
