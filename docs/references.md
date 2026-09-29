@@ -185,12 +185,24 @@ course map run.fit --reference auto
 Averaging many runs of one course into a reference -- eighty parkruns make a better line
 than any one of them -- falls out of the same alignment, and is a later refinement.
 
-## Comparison, later
+## Comparison
 
-`course compare run.fit --reference "Rhodes parkrun"` -- or a stored run as the reference --
-aligns both by reference distance and reports the time between them, split by kilometre or
-by stretch, and optionally colours the course on the map by ahead and behind. It needs the
-reference to keep its times, which the original file does.
+`course map run.fit --compare "Rhodes parkrun"` -- a stored reference or a file -- aligns the
+run with the reference by the matching above, notes when each reached every 10 m of the
+reference, and colours the course by the run's pace against the reference's there: the log
+of their speeds, over 30 m either side, on a scale from 15% slower (blue) to 15% faster
+(red). The warm-up and cool-down outside the matched stretch stay thin and grey. The report
+says how far ahead or behind the run finished. It needs the reference to keep its times,
+which the original file does; an official course file has none, and is refused.
+
+How finely the colours change is the drawing's to decide, not the comparison's: osmbase's
+`render.Gradient` takes a value at every point and colours pieces a few pixels long, each
+the length-weighted average of its values, so a whole marathon and one corner of a parkrun
+are both coloured as finely as the picture can show and no finer. The same drawing is meant
+for pace, height or power along a single run later.
+
+Still to come: `course compare`, the same comparison as text -- split by kilometre or by
+stretch, with the running gap.
 
 ## Parts
 
@@ -200,7 +212,7 @@ reference to keep its times, which the original file does.
 | 1 | Draw a reference from a file, and the great circle | course | `--reference FILE` and `--great-circle` draw dashed, under the course, with a legend; the view holds both |
 | 2 | The reference store | course | `course reference add/list/show/remove`, crops by distance or time, names and aliases in `--reference` |
 | 3 | Matching | course | `course match`, whole and partial, `--reference auto` |
-| 4 | Comparison | course | time and pace difference along a reference |
+| 4 | Comparison | osmbase render, course | `map --compare` colours the course by pace against a reference (built); `course compare` in text (to come) |
 
 ## Courses to test against
 

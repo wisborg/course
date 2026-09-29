@@ -120,6 +120,18 @@ type Match struct {
 	// Stops are where an activity with times stood still for at least
 	// minStop: a toilet, a drink station, a crossing.
 	Stops []Stop
+	// Arrivals are, for each point of the reference -- resampled every
+	// Options.Step metres from its start -- when and where the activity
+	// reached it: the first of its points aligned there. Never earlier than
+	// the one before, so a course followed backwards in places cannot make
+	// time run back. Times are meaningful only for an activity with times.
+	Arrivals []Arrival
+}
+
+// Arrival is when and where an activity reached a point of the reference.
+type Arrival struct {
+	Elapsed  time.Duration
+	Lat, Lon float64
 }
 
 // Stop is where the activity stood still: how far along the reference, when
@@ -291,10 +303,25 @@ func assess(a, r []Sample, o Options, aTimed, rTimed bool) Match {
 	if aTimed {
 		stops = standstills(a, r, pairs, ad)
 	}
+	arrivals := make([]Arrival, len(r))
+	for j := range arrivals {
+		arrivals[j].Elapsed = -1
+	}
+	for _, p := range pairs {
+		// The pairs run backwards, so the last one seen for a point of the
+		// reference is the first the activity aligned there.
+		arrivals[p[1]] = Arrival{Elapsed: a[p[0]].Elapsed, Lat: a[p[0]].Lat, Lon: a[p[0]].Lon}
+	}
+	for j := 1; j < len(arrivals); j++ {
+		if arrivals[j].Elapsed < arrivals[j-1].Elapsed {
+			arrivals[j].Elapsed = arrivals[j-1].Elapsed
+		}
+	}
 	sorted := append([]float64(nil), rd...)
 	sort.Float64s(sorted)
 	return Match{
 		Stops:      stops,
+		Arrivals:   arrivals,
 		Coverage:   float64(near) / float64(len(r)),
 		Median:     sorted[len(sorted)/2],
 		Worst:      sorted[len(sorted)-1],

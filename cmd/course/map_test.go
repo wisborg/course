@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/wisborg/osmbase/render"
+
 	"github.com/wisborg/course"
 )
 
@@ -186,4 +188,80 @@ func mustRead(t *testing.T, path string) *course.Course {
 		t.Fatal(err)
 	}
 	return c
+}
+
+// --compare colours the course against another run of it: a run at half the
+// reference's pace is drawn at the slow end of the scale, the legend says
+// what the colours mean, and the report says how far behind it finished. A
+// reference with no times is refused, saying why.
+func TestMapCompare(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	run, ref, plan, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "ref.gpx"), filepath.Join(dir, "plan.gpx"), filepath.Join(dir, "run.png")
+	writeLine(t, ref, 10, 20, 0.0002, 50)
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.0002), stamp(2*i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, run, b.String())
+	b.Reset()
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"></trkpt>`, ftoa6(20+float64(i)*0.0002))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, plan, b.String())
+	store := filepath.Join(dir, "store")
+
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	defer root.SetArgs(nil)
+	root.SetArgs([]string{"map", "--store", store, "--out", out, "--width", "400", "--height", "300", "--compare", ref, run})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("map: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "compared   against ref") || !strings.Contains(stdout.String(), "behind at the end") {
+		t.Errorf("the report does not say how the run compared:\n%s", stdout.String())
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	slow := render.DefaultColours[0]
+	var onCourse, inLegend bool
+	for y := 0; y < 300; y++ {
+		for x := 0; x < 400; x++ {
+			cr, cg, cb, _ := img.At(x, y).RGBA()
+			if near(cr>>8, uint32(slow.R)) && near(cg>>8, uint32(slow.G)) && near(cb>>8, uint32(slow.B)) {
+				if y < 60 {
+					inLegend = true
+				} else {
+					onCourse = true
+				}
+			}
+		}
+	}
+	if !onCourse {
+		t.Error("a run at half the reference's pace is nowhere drawn in the slow end's colour")
+	}
+	if !inLegend {
+		t.Error("the legend has no colour bar")
+	}
+
+	resetNow(mapCmd)
+	root.SetArgs([]string{"map", "--store", store, "--out", out, "--compare", plan, run})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "no times") {
+		t.Errorf("compared against a course with no times: %v", err)
+	}
 }

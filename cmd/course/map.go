@@ -4,13 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/png"
 	"io"
 	iofs "io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/image/font"
@@ -20,6 +23,7 @@ import (
 	"github.com/wisborg/osmbase/slice"
 
 	"github.com/wisborg/course"
+	"github.com/wisborg/course/compare"
 	"github.com/wisborg/course/match"
 	"github.com/wisborg/course/routemap"
 )
@@ -35,6 +39,7 @@ var mapOpts struct {
 	fonts         []string
 	references    []string
 	greatCircle   bool
+	compare       string
 }
 
 var mapCmd = &cobra.Command{
@@ -75,6 +80,7 @@ func init() {
 	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
+	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
 	f.BoolVar(&mapOpts.greatCircle, "great-circle", false, "draw the great circle between the course's start and finish, dashed: the shortest way over the globe")
 	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
@@ -137,13 +143,33 @@ func runMap(cmd *cobra.Command, args []string) error {
 	face := faceAt(baseTextSize * scale)
 	inks := routemap.InksFor(palette, overlay)
 	drawing := routemap.Drawing(c, view, inks, scale)
+	var cmp *comparison
+	if mapOpts.compare != "" {
+		if cmp, err = compareWith(c, mapOpts.compare, scale); err != nil {
+			return err
+		}
+		// The whole course thin and grey, for the stretches outside the
+		// one compared -- a warm-up, a cool-down -- and the compared
+		// stretch coloured over it.
+		for i := range drawing.Lines {
+			drawing.Lines[i].Ink, drawing.Lines[i].Dash = inks.Gap, nil
+			drawing.Lines[i].Width *= 0.5
+			drawing.Lines[i].Halo *= 0.5
+		}
+		drawing.Gradients = append(drawing.Gradients, cmp.gradient)
+	}
 	refInks := routemap.ReferenceInks(palette)
 	drawing = routemap.WithReferences(drawing, refs, refInks, inks.Halo, scale)
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
 	}
-	if len(refs) > 0 {
-		legend := []entry{{name: nameOf(args[0]), ink: inks.Route}}
+	if len(refs) > 0 || cmp != nil {
+		var legend []entry
+		if cmp == nil {
+			legend = append(legend, entry{name: nameOf(args[0]), ink: inks.Route})
+		} else {
+			legend = append(legend, entry{name: nameOf(args[0]) + " against " + cmp.name, ramp: &cmp.ramp})
+		}
 		for i, r := range refs {
 			legend = append(legend, entry{name: r.Name, ink: refInks[i%len(refInks)], dashed: true})
 		}
@@ -154,6 +180,10 @@ func runMap(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	writeMapReport(cmd.OutOrStdout(), out, c, view, res, len(routemap.DistanceMarkers(c)))
+	if cmp != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "%-10s against %s, %.2f km of it: %s\n", "compared", cmp.name,
+			float64(len(cmp.profile.Run)-1)*cmp.profile.Step/1000, gapText(cmp.profile.Gap(len(cmp.profile.Run)-1)))
+	}
 	writeMissing(errw)
 	return nil
 }
@@ -204,30 +234,11 @@ func loadReferences(c *course.Course, names []string, greatCircle bool) ([]route
 			refs = append(refs, found...)
 			continue
 		}
-		if info, err := os.Stat(n); err == nil && !info.IsDir() {
-			rc, err := course.Read(n)
-			if err != nil {
-				return nil, fmt.Errorf("--reference %s: %w", n, err)
-			}
-			if len(rc.Points) < 2 {
-				return nil, fmt.Errorf("--reference %s has no line to draw", n)
-			}
-			refs = append(refs, routemap.FromCourse(nameOf(n), rc))
-			continue
-		}
-		s, err := openReferences()
+		name, rc, err := resolveCourse(n)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("--reference %w", err)
 		}
-		m, err := s.Find(n)
-		if err != nil {
-			return nil, fmt.Errorf("--reference %s: no such file, and %w", n, err)
-		}
-		rc, err := m.Course()
-		if err != nil {
-			return nil, fmt.Errorf("--reference %s: %w", n, err)
-		}
-		refs = append(refs, routemap.FromCourse(m.Name, rc))
+		refs = append(refs, routemap.FromCourse(name, rc))
 	}
 	if greatCircle {
 		gc, ok := routemap.GreatCircle(c)
@@ -237,6 +248,96 @@ func loadReferences(c *course.Course, names []string, greatCircle bool) ([]route
 		refs = append(refs, gc)
 	}
 	return refs, nil
+}
+
+// comparison is a course coloured against another run of it.
+type comparison struct {
+	name     string
+	profile  *compare.Profile
+	gradient render.Gradient
+	ramp     ramp
+}
+
+// compareRamp is how far the colours reach: 15% faster is red, 15% slower
+// blue. Enough for a parkrun run hard against one jogged; a hill or a stop
+// goes past it and is simply at the end of the scale.
+var compareRamp = ramp{
+	scale: render.Scale{Min: math.Log(1 / 1.15), Max: math.Log(1.15)},
+	low:   "15% slower",
+	high:  "15% faster",
+}
+
+// compareAround is how far either side of a point its pace is compared
+// over, in metres: a few GPS fixes, so one fix out of place does not
+// colour the course on its own.
+const compareAround = 30
+
+// compareEdge is the thin dark edge round a coloured course: enough to hold
+// it off a map of any colour, little enough that the map shows beside it.
+var compareEdge = color.RGBA{R: 0x33, G: 0x33, B: 0x33, A: 0xff}
+
+// compareWith colours c against the run name names. How finely is the
+// drawing's to decide, from the view.
+func compareWith(c *course.Course, name string, scale float64) (*comparison, error) {
+	refName, ref, err := resolveCourse(name)
+	if err != nil {
+		return nil, fmt.Errorf("--compare %w", err)
+	}
+	p, err := compare.Against(c, ref, match.Options{})
+	if err != nil {
+		return nil, fmt.Errorf("--compare %s: %w", refName, err)
+	}
+	g := render.Gradient{
+		Values: p.Faster(compareAround),
+		Scale:  compareRamp.scale,
+		Width:  3 * scale, Halo: 0.8 * scale, HaloInk: compareEdge,
+	}
+	for _, w := range p.Where {
+		g.Points = append(g.Points, render.Coord{Lat: w.Lat, Lon: w.Lon})
+	}
+	return &comparison{name: refName, profile: p, gradient: g, ramp: compareRamp}, nil
+}
+
+// gapText is a gap in words: ahead, behind, or level.
+func gapText(gap time.Duration) string {
+	gap = gap.Round(time.Second)
+	switch {
+	case gap > 0:
+		return fmt.Sprintf("%v behind at the end", gap)
+	case gap < 0:
+		return fmt.Sprintf("%v ahead at the end", -gap)
+	}
+	return "level at the end"
+}
+
+// resolveCourse is the course a reference names: a file if there is one by
+// that name -- a path is unambiguous, and a reference stored as "run.gpx"
+// should not stop the file run.gpx being read -- and a stored reference
+// otherwise. The name returned is the one to show it by.
+func resolveCourse(n string) (string, *course.Course, error) {
+	if info, err := os.Stat(n); err == nil && !info.IsDir() {
+		c, err := course.Read(n)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s: %w", n, err)
+		}
+		if len(c.Points) < 2 {
+			return "", nil, fmt.Errorf("%s has no line", n)
+		}
+		return nameOf(n), c, nil
+	}
+	s, err := openReferences()
+	if err != nil {
+		return "", nil, err
+	}
+	m, err := s.Find(n)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s: no such file, and %w", n, err)
+	}
+	c, err := m.Course()
+	if err != nil {
+		return "", nil, fmt.Errorf("%s: %w", n, err)
+	}
+	return m.Name, c, nil
 }
 
 // matchedReferences are the stored references the course matched, each once

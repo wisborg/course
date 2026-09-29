@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -159,27 +158,11 @@ func matchReferences(names []string) ([]match.Reference, error) {
 	}
 	var out []match.Reference
 	for _, n := range names {
-		if info, err := os.Stat(n); err == nil && !info.IsDir() {
-			c, err := course.Read(n)
-			if err != nil {
-				return nil, fmt.Errorf("--reference %s: %w", n, err)
-			}
-			out = append(out, match.Reference{Name: nameOf(n), Course: c})
-			continue
-		}
-		s, err := openReferences()
+		name, c, err := resolveCourse(n)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("--reference %w", err)
 		}
-		m, err := s.Find(n)
-		if err != nil {
-			return nil, fmt.Errorf("--reference %s: no such file, and %w", n, err)
-		}
-		c, err := m.Course()
-		if err != nil {
-			return nil, fmt.Errorf("--reference %s: %w", n, err)
-		}
-		out = append(out, match.Reference{Name: m.Name, Course: c})
+		out = append(out, match.Reference{Name: name, Course: c})
 	}
 	return out, nil
 }

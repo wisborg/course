@@ -245,3 +245,29 @@ func TestAStopWithStepsInItIsOneStop(t *testing.T) {
 		t.Errorf("stops %+v; want one of over four minutes", ms[0].Stops)
 	}
 }
+
+// Each point of the reference has when and where the activity reached it,
+// never earlier than the point before: at 2 m a second, the point 500 m in
+// is reached 250 s after the start of the stretch, and a stop before it
+// adds its length.
+func TestArrivals(t *testing.T) {
+	ms := find(t, path(0, outAndBack...))
+	if len(ms) != 1 {
+		t.Fatalf("%d matches", len(ms))
+	}
+	arr := ms[0].Arrivals
+	if len(arr) < 200 {
+		t.Fatalf("%d arrivals for a 2 km course sampled every 10 m", len(arr))
+	}
+	if got := arr[50].Elapsed; got < 245*time.Second || got > 255*time.Second {
+		t.Errorf("500 m in at %v; want about 250 s", got)
+	}
+	for j := 1; j < len(arr); j++ {
+		if arr[j].Elapsed < arr[j-1].Elapsed {
+			t.Fatalf("time runs back at %d", j)
+		}
+	}
+	if math.Abs((arr[50].Lon-20)/east-500) > 15 {
+		t.Errorf("500 m in is placed %.0f m east", (arr[50].Lon-20)/east)
+	}
+}

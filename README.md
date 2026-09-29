@@ -101,6 +101,16 @@ missed the course or left it; `map --reference auto` draws every reference it ma
 ./course map morning.fit --reference auto
 ```
 
+`--compare` colours the course by how much faster or slower it was than another run of it --
+a stored reference or a file -- place by place, from blue (15% slower) to red (15% faster),
+and says how far ahead or behind it finished. The two are lined up by where on the course
+each was, so a wide corner or a stop does not put them out of step. It needs the other run's
+times, so an official course file will not do.
+
+```
+./course map today.fit --compare rhodes
+```
+
 The design and what was measured on real courses are in
 [docs/references.md](docs/references.md).
 
