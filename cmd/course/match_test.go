@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/wisborg/course/match"
 )
 
 // A run through two stored references, with a stretch between them, is
@@ -60,9 +62,12 @@ func TestMatchCommand(t *testing.T) {
 		"--out", png, "--width", "300", "--height", "300", run1); err != nil {
 		t.Errorf("map --reference auto: %v\n%s", err, out)
 	}
-	refsFound, err := matchedReferences(mustRead(t, run1))
-	if err != nil || len(refsFound) != 2 {
-		t.Errorf("auto found %d references, %v", len(refsFound), err)
+	refsFound, err := matchedReferences(mustRead(t, run1), true)
+	if err != nil || len(refsFound) != 2 || refsFound[0].Name != "First" || refsFound[1].Name != "Second" || !refsFound[0].Follows {
+		t.Errorf("auto found %+v, %v; want First then Second, in the order run, drawn where they part", refsFound, err)
+	}
+	if whole, err := matchedReferences(mustRead(t, run1), false); err != nil || len(whole) != 2 || whole[0].Follows || whole[1].Follows {
+		t.Errorf("auto with whole references found %+v, %v; want both, drawn whole", whole, err)
 	}
 }
 
@@ -88,4 +93,16 @@ func writeMorning(t *testing.T, path string) {
 	}
 	b.WriteString(`</trkseg></trk></gpx>`)
 	writeFile(t, path, b.String())
+}
+
+// Of two matches with one reference, the better covered is taken; and a
+// reference with none has none.
+func TestBestMatch(t *testing.T) {
+	ms := []match.Match{{Reference: "A", Coverage: 0.85, From: 1}, {Reference: "B", Coverage: 1}, {Reference: "A", Coverage: 0.95, From: 2}}
+	if m, ok := bestMatch(ms, "A"); !ok || m.From != 2 {
+		t.Errorf("best of A = %+v, %v; want the 0.95", m, ok)
+	}
+	if _, ok := bestMatch(ms, "C"); ok {
+		t.Error("a match found for a reference never matched")
+	}
 }

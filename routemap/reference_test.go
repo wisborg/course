@@ -1,6 +1,7 @@
 package routemap
 
 import (
+	"image/color"
 	"math"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course"
+	"github.com/wisborg/course/match"
 )
 
 func between(a, b course.Point) *course.Course {
@@ -111,5 +113,65 @@ func TestWithReferences(t *testing.T) {
 	}
 	if course.Lines[0].Width != 4 {
 		t.Error("the course's own drawing was changed in place")
+	}
+}
+
+// line1km is a course 1 km east along 10°N from 20°E, a point every 10 m.
+func line1km() *course.Course {
+	c := &course.Course{}
+	for x := 0.0; x <= 1000; x += 10 {
+		c.Points = append(c.Points, course.Point{Lat: 10, Lon: 20 + x/109_600})
+	}
+	return c
+}
+
+// A followed reference is drawn where the course missed it, reaching a
+// little past each end so it is seen leaving the course and coming back;
+// two such stretches close enough to touch are one; and one followed all the
+// way draws nothing.
+func TestFollowed(t *testing.T) {
+	ref := line1km()
+	m := match.Match{Missed: []match.Stretch{{From: 200, To: 300}, {From: 340, To: 400}, {From: 800, To: 850}}}
+	r := Followed("Loop", ref, m)
+	if !r.Follows || r.Name != "Loop" || len(r.Points) != len(ref.Points) {
+		t.Fatalf("Followed = %+v", r)
+	}
+	if len(r.Apart) != 2 {
+		t.Fatalf("drawn in %d pieces, want 2: 200-400 m, the two stretches joined, and 800-850 m", len(r.Apart))
+	}
+	along := func(c render.Coord) float64 { return (c.Lon - 20) * 109_600 }
+	for i, want := range [][2]float64{{170, 430}, {770, 880}} {
+		p := r.Apart[i]
+		if a, b := along(p[0]), along(p[len(p)-1]); math.Abs(a-want[0]) > 11 || math.Abs(b-want[1]) > 11 {
+			t.Errorf("piece %d runs %.0f-%.0f m, want %.0f-%.0f", i, a, b, want[0], want[1])
+		}
+	}
+	if d := r.Drawn(); len(d) != 2 {
+		t.Errorf("drawn %d pieces, want the 2 apart", len(d))
+	}
+	if all := Followed("Loop", ref, match.Match{}); !all.Follows || len(all.Apart) != 0 || len(all.Drawn()) != 0 {
+		t.Errorf("a reference followed all the way is drawn: %+v", all.Drawn())
+	}
+	if whole := FromCourse("Loop", ref); len(whole.Drawn()) != 1 || len(whole.Drawn()[0]) != len(ref.Points) {
+		t.Errorf("a reference not followed is not drawn whole")
+	}
+}
+
+// A reference drawn only where it parts needs no room beside the course,
+// which keeps its width; one drawn whole still narrows it.
+func TestWithReferencesKeepsTheCourseWideForDepartures(t *testing.T) {
+	d := render.Drawing{Lines: []render.Line{{Points: []render.Coord{{}, {Lat: 1}}, Width: 10, Halo: 2}}}
+	inks := []color.RGBA{{A: 0xff}}
+	apart := Followed("Loop", line1km(), match.Match{Missed: []match.Stretch{{From: 200, To: 300}}})
+	got := WithReferences(d, []Reference{apart}, inks, color.RGBA{}, 1)
+	if n := len(got.Lines); n != 2 || got.Lines[1].Width != 10 || got.Lines[0].Dash == nil {
+		t.Errorf("with a departure drawn: %+v; want the departure under the course at its full width", got.Lines)
+	}
+	got = WithReferences(d, []Reference{apart, FromCourse("Other", line1km())}, inks, color.RGBA{}, 1)
+	if last := got.Lines[len(got.Lines)-1]; last.Width != 10*thinned {
+		t.Errorf("with a reference drawn whole, the course is %v wide, want narrowed", last.Width)
+	}
+	if got := WithReferences(d, []Reference{Followed("Loop", line1km(), match.Match{})}, inks, color.RGBA{}, 1); len(got.Lines) != 1 || got.Lines[0].Width != 10 {
+		t.Errorf("with nothing of the reference to draw, the drawing changed: %+v", got.Lines)
 	}
 }

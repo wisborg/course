@@ -80,6 +80,12 @@ repeatable -- and `--great-circle` the shortest way over the globe between the c
 and finish. Each is dashed, under the course, in a colour of its own, and a legend in the top
 left says which line is which. The view holds the course and all of them.
 
+A reference the course followed is drawn only where the two part -- a closed bridge, a
+detour, the stretch a late-started watch never saw -- so the map is not buried under a
+second line that says nothing new; the legend says "where the course left it", or
+"followed all the way" when there is nothing to draw. `--whole-references` draws them whole
+again. A reference the course did not follow, and the great circle, are always drawn whole.
+
 References you use often can be stored by name:
 
 ```

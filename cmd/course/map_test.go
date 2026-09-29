@@ -16,6 +16,7 @@ import (
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course"
+	"github.com/wisborg/course/routemap"
 )
 
 // resetFlags puts a command's flags back to their defaults after a test ran
@@ -263,5 +264,103 @@ func TestMapCompare(t *testing.T) {
 	root.SetArgs([]string{"map", "--store", store, "--out", out, "--compare", plan, run})
 	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "no times") {
 		t.Errorf("compared against a course with no times: %v", err)
+	}
+}
+
+// A reference the course followed is drawn only where the two part -- here a
+// detour 100 m north in its middle -- and, with --whole-references, whole.
+func TestMapDrawsAFollowedReferenceWhereItParts(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	run1, ref, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "ref.gpx"), filepath.Join(dir, "run.png")
+	// 2.2 km, so the detour is a small enough part of the reference that
+	// the run still matches it.
+	writeLine(t, run1, 10, 20, 0.0002, 100)
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 100; i++ {
+		lat := 10.0
+		// A run's pace, 10 s a point: matching takes a departure of less
+		// than 10 s for a GPS fix out of place.
+		if i >= 30 && i <= 33 {
+			lat += 0.0009 // the reference's own way round, 100 m north
+		}
+		fmt.Fprintf(&b, `<trkpt lat="%s" lon="%s"><time>%s</time></trkpt>`, ftoa6(lat), ftoa6(20+float64(i)*0.0002), stamp(10*i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, ref, b.String())
+
+	// The run matches the reference, with one stretch apart -- so what is
+	// drawn below is that departure, not a reference drawn whole for want
+	// of a match.
+	refs, err := loadReferences(mustRead(t, run1), []string{ref}, false, true)
+	if err != nil || len(refs) != 1 || !refs[0].Follows || len(refs[0].Apart) != 1 {
+		t.Fatalf("the reference as loaded: %v, %+v", err, refs)
+	}
+
+	draw := func(args ...string) image.Image {
+		t.Helper()
+		resetNow(mapCmd)
+		// Large enough that a reference's edges show beside the course.
+		all := append([]string{"map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "1200", "--height", "900", "--reference", ref}, args...)
+		if o, err := run(t, append(all, run1)...); err != nil {
+			t.Fatalf("map %v: %v\n%s", args, err, o)
+		}
+		f, err := os.Open(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		img, err := png.Decode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return img
+	}
+	// The eastern end, where the two coincide. There the reference shows
+	// only as edges beside the course, blended with it, so it is looked for
+	// by hue rather than by its exact ink.
+	east := image.Rect(900, 300, 1200, 900)
+	img := draw()
+	if !anyInk(img, image.Rect(0, 200, 1200, 900)) {
+		t.Error("the reference's detour is not drawn")
+	}
+	if anyPink(img, east) {
+		t.Error("the reference is drawn where the course followed it")
+	}
+	if img := draw("--whole-references"); !anyPink(img, east) {
+		t.Error("with --whole-references, the reference is not drawn where the course followed it")
+	}
+}
+
+// anyPink reports whether any pixel in r is reddish pink -- the light
+// palette's first reference ink, whole or blended with the course's black
+// or the ground -- which neither the black course, the blue ground nor the
+// white legend is.
+func anyPink(img image.Image, r image.Rectangle) bool {
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			cr, cg, cb, _ := img.At(x, y).RGBA()
+			if cr>>8 > cg>>8+40 && cr>>8 > cb>>8+10 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// The view holds what is drawn: of a reference drawn only where it parts
+// from the course, not the rest of it.
+func TestExtentHoldsWhatIsDrawn(t *testing.T) {
+	c := &course.Course{Points: []course.Point{{Lat: 10, Lon: 20}, {Lat: 10.01, Lon: 20.01}}}
+	far := []render.Coord{{Lat: 11, Lon: 21}, {Lat: 11.01, Lon: 21.01}}
+	if got, want := extent(c, []routemap.Reference{{Points: far, Follows: true}}), extent(c, nil); got != want {
+		t.Errorf("with nothing of the reference drawn, the extent is %+v, want the course's %+v", got, want)
+	}
+	if got := extent(c, []routemap.Reference{{Points: far}}); got.North < 11 {
+		t.Errorf("with the reference drawn whole, the extent %+v does not reach it", got)
 	}
 }

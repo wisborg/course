@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ var mapOpts struct {
 	fonts         []string
 	references    []string
 	greatCircle   bool
+	whole         bool
 	compare       string
 }
 
@@ -81,6 +83,7 @@ func init() {
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
 	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
+	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
 	f.BoolVar(&mapOpts.greatCircle, "great-circle", false, "draw the great circle between the course's start and finish, dashed: the shortest way over the globe")
 	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
@@ -108,7 +111,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if out == "" {
 		out = nameOf(args[0]) + ".png"
 	}
-	refs, err := loadReferences(c, mapOpts.references, mapOpts.greatCircle)
+	refs, err := loadReferences(c, mapOpts.references, mapOpts.greatCircle, !mapOpts.whole)
 	if err != nil {
 		return err
 	}
@@ -171,7 +174,14 @@ func runMap(cmd *cobra.Command, args []string) error {
 			legend = append(legend, entry{name: nameOf(args[0]) + " against " + cmp.name, ramp: &cmp.ramp})
 		}
 		for i, r := range refs {
-			legend = append(legend, entry{name: r.Name, ink: refInks[i%len(refInks)], dashed: true})
+			name := r.Name
+			switch {
+			case r.Follows && len(r.Apart) == 0:
+				name += ", followed all the way"
+			case r.Follows:
+				name += ", where the course left it"
+			}
+			legend = append(legend, entry{name: name, ink: refInks[i%len(refInks)], dashed: true})
 		}
 		drawLegend(img, legend, face, scale)
 	}
@@ -223,11 +233,15 @@ func nameOf(path string) string {
 // A file first, because a path is unambiguous and a name is only a name: a
 // reference stored as "run.gpx" should not stop the file run.gpx being
 // drawn.
-func loadReferences(c *course.Course, names []string, greatCircle bool) ([]routemap.Reference, error) {
+//
+// When apart is set, a reference the course followed is drawn only where the
+// two part; one it did not follow is drawn whole, since all of it is
+// different.
+func loadReferences(c *course.Course, names []string, greatCircle, apart bool) ([]routemap.Reference, error) {
 	var refs []routemap.Reference
 	for _, n := range names {
 		if n == "auto" {
-			found, err := matchedReferences(c)
+			found, err := matchedReferences(c, apart)
 			if err != nil {
 				return nil, err
 			}
@@ -238,7 +252,13 @@ func loadReferences(c *course.Course, names []string, greatCircle bool) ([]route
 		if err != nil {
 			return nil, fmt.Errorf("--reference %w", err)
 		}
-		refs = append(refs, routemap.FromCourse(name, rc))
+		r := routemap.FromCourse(name, rc)
+		if apart {
+			if m, ok := bestMatch(match.Find(c, []match.Reference{{Name: name, Course: rc}}, match.Options{}), name); ok {
+				r = routemap.Followed(name, rc, m)
+			}
+		}
+		refs = append(refs, r)
 	}
 	if greatCircle {
 		gc, ok := routemap.GreatCircle(c)
@@ -332,25 +352,52 @@ func resolveCourse(n string) (string, *course.Course, error) {
 }
 
 // matchedReferences are the stored references the course matched, each once
-// however often it was matched, for --reference auto.
-func matchedReferences(c *course.Course) ([]routemap.Reference, error) {
+// however often it was matched, for --reference auto: drawn where the course
+// parted from them when apart is set, and whole otherwise.
+func matchedReferences(c *course.Course, apart bool) ([]routemap.Reference, error) {
 	stored, err := matchReferences(nil)
 	if err != nil {
 		return nil, err
 	}
-	byName := map[string]*course.Course{}
-	for _, r := range stored {
-		byName[r.Name] = r.Course
-	}
+	ms := match.Find(c, stored, match.Options{})
 	var out []routemap.Reference
-	seen := map[string]bool{}
-	for _, m := range match.Find(c, stored, match.Options{}) {
-		if !seen[m.Reference] {
-			seen[m.Reference] = true
-			out = append(out, routemap.FromCourse(m.Reference, byName[m.Reference]))
+	for _, r := range stored {
+		m, ok := bestMatch(ms, r.Name)
+		switch {
+		case !ok:
+		case apart:
+			out = append(out, routemap.Followed(r.Name, r.Course, m))
+		default:
+			out = append(out, routemap.FromCourse(r.Name, r.Course))
 		}
 	}
+	// In the order the course reached them, as before: a legend reads
+	// down the morning.
+	sort.SliceStable(out, func(i, j int) bool { return firstMatch(ms, out[i].Name) < firstMatch(ms, out[j].Name) })
 	return out, nil
+}
+
+// bestMatch is the match with name that covered most of it: when a course
+// followed a reference twice, the pass that parted from it least.
+func bestMatch(ms []match.Match, name string) (match.Match, bool) {
+	var best match.Match
+	found := false
+	for _, m := range ms {
+		if m.Reference == name && (!found || m.Coverage > best.Coverage) {
+			best, found = m, true
+		}
+	}
+	return best, found
+}
+
+// firstMatch is where along the course the first match with name starts.
+func firstMatch(ms []match.Match, name string) float64 {
+	for _, m := range ms {
+		if m.Reference == name {
+			return m.From
+		}
+	}
+	return math.Inf(1)
 }
 
 // extent is the rectangle the course and its references cover -- a reference
@@ -364,9 +411,11 @@ func extent(c *course.Course, refs []routemap.Reference) render.Bounds {
 		b.South, b.North = min(b.South, p.Lat), max(b.North, p.Lat)
 	}
 	for _, r := range refs {
-		for _, p := range r.Points {
-			b.West, b.East = min(b.West, p.Lon), max(b.East, p.Lon)
-			b.South, b.North = min(b.South, p.Lat), max(b.North, p.Lat)
+		for _, piece := range r.Drawn() {
+			for _, p := range piece {
+				b.West, b.East = min(b.West, p.Lon), max(b.East, p.Lon)
+				b.South, b.North = min(b.South, p.Lat), max(b.North, p.Lat)
+			}
 		}
 	}
 	if course.Metres(b.South, b.West, b.North, b.East) < 500 {

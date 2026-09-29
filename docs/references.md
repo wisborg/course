@@ -137,10 +137,16 @@ coloured edge. To try later:
 
 - **Lighter lines altogether**: thinner and translucent strokes, lighter halos, so the map
   shows through.
-- **A reference drawn only where it leaves the course**, by more than a few metres: where
-  the two coincide there is nothing to see, and where they part the difference stands alone.
-  It needs each point's distance from the reference, which matching (part 3) computes, so it
-  follows that.
+- **A reference drawn only where it leaves the course** -- now built, and the default. A
+  reference the course matched is drawn only over the stretches matching reports as missed
+  (more than `--near` from the course for at least 10 s, or 20 m untimed), each reaching
+  30 m further at both ends so the line is seen leaving the course and rejoining it. Close
+  stretches join into one. With nothing drawn beside it, the course keeps its full width.
+  The legend says "where the course left it", or "followed all the way" when nothing is
+  left to draw. A reference that did not match, and the great circle, are drawn whole, as
+  is everything with `--whole-references`. On Rhodes parkrun the bridge-closed run against
+  a usual one draws the one stretch where the courses differ and leaves the rest of the
+  map clear.
 - **Parallel lines**: the reference offset beside the course, as a transit map draws lines
   that share a road.
 

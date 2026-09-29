@@ -7,6 +7,7 @@ import (
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course"
+	"github.com/wisborg/course/match"
 )
 
 // Reference is a line to compare a course against: another course, or the
@@ -14,6 +15,22 @@ import (
 type Reference struct {
 	Name   string
 	Points []render.Coord
+	// Follows says the course followed the reference, and then only Apart
+	// is drawn: the stretches of it where the two part. Where they
+	// coincide a second line says nothing and hides the map beneath; where
+	// they part, the difference stands alone. A reference the course
+	// followed all the way has no Apart, and nothing of it is drawn.
+	Follows bool
+	Apart   [][]render.Coord
+}
+
+// Drawn is what of the reference is drawn: all of it, or where it and the
+// course part.
+func (r Reference) Drawn() [][]render.Coord {
+	if r.Follows {
+		return r.Apart
+	}
+	return [][]render.Coord{r.Points}
 }
 
 // FromCourse is a course's line as a reference, named name.
@@ -113,13 +130,15 @@ func ReferenceLines(refs []Reference, inks []color.RGBA, halo color.RGBA, scale 
 	width := 0.75 * line
 	var out []render.Line
 	for i, r := range refs {
-		if len(r.Points) < 2 {
-			continue
+		for _, piece := range r.Drawn() {
+			if len(piece) < 2 {
+				continue
+			}
+			out = append(out, render.Line{
+				Points: piece, Ink: inks[i%len(inks)], Width: width, Halo: h, HaloInk: halo,
+				Dash: []float32{float32(5 * width), float32(3 * width)},
+			})
 		}
-		out = append(out, render.Line{
-			Points: r.Points, Ink: inks[i%len(inks)], Width: width, Halo: h, HaloInk: halo,
-			Dash: []float32{float32(5 * width), float32(3 * width)},
-		})
 	}
 	return out
 }
@@ -130,12 +149,23 @@ func ReferenceLines(refs []Reference, inks []color.RGBA, halo color.RGBA, scale 
 const thinned = 0.55
 
 // WithReferences is a course's drawing with references under it: the
-// references first, so the course is drawn over them, and the course's lines
-// narrowed, with their halos, so a reference that follows the course closely
-// shows along its edges. With no references the drawing is as it was.
+// references first, so the course is drawn over them, and -- when any is
+// drawn whole -- the course's lines narrowed, with their halos, so a
+// reference that follows the course closely shows along its edges. A
+// reference drawn only where it parts from the course needs no room beside
+// it, and the course keeps its width. With nothing to draw the drawing is as
+// it was.
 func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, halo color.RGBA, scale float64) render.Drawing {
 	lines := ReferenceLines(refs, inks, halo, scale)
 	if len(lines) == 0 {
+		return d
+	}
+	whole := false
+	for _, r := range refs {
+		whole = whole || !r.Follows
+	}
+	if !whole {
+		d.Lines = append(lines, d.Lines...)
 		return d
 	}
 	course := make([]render.Line, len(d.Lines))
@@ -147,3 +177,43 @@ func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, halo 
 	d.Lines = append(lines, course...)
 	return d
 }
+
+// Followed is a reference the course was matched to, as m found it, drawn
+// only where the two part: the stretches of it the course missed -- a
+// closed bridge, a road-works detour, the part of the course a watch
+// started late never saw -- each reaching departurePad further at both
+// ends, so the dashed line is seen leaving the course and coming back to
+// it rather than hanging beside it unconnected.
+func Followed(name string, ref *course.Course, m match.Match) Reference {
+	r := FromCourse(name, ref)
+	r.Follows = true
+	s := match.Resample(ref, departureStep)
+	var from, to []float64
+	for _, st := range m.Missed {
+		f, t := st.From-departurePad, st.To+departurePad
+		if n := len(to); n > 0 && f <= to[n-1] {
+			to[n-1] = t // padded, the two touch: one stretch
+			continue
+		}
+		from, to = append(from, f), append(to, t)
+	}
+	for i := range from {
+		var piece []render.Coord
+		for _, p := range s {
+			if p.Along >= from[i] && p.Along <= to[i] {
+				piece = append(piece, render.Coord{Lat: p.Lat, Lon: p.Lon})
+			}
+		}
+		r.Apart = append(r.Apart, piece)
+	}
+	return r
+}
+
+// departureStep is how finely a departure is drawn, in metres: the spacing
+// matching measures at.
+const departureStep = 10.0
+
+// departurePad is how far past where the course and a reference part a
+// departure is drawn, in metres: a little more than matching's tolerance, so
+// the line starts on the course.
+const departurePad = 30.0
