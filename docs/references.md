@@ -1,0 +1,192 @@
+# Reference courses
+
+A map of a course can show a **reference** beside it: another course to compare the line
+against. The Rhodes parkrun, run eighty times, drawn over the eighty-first; a standard loop
+from home; for a flight, the great circle between where it took off and where it landed.
+The reference is drawn dashed, in an ink of its own, under the course.
+
+This is the plan. Nothing here is built yet.
+
+## Where references come from
+
+### Your own, first
+
+The references that matter most are the ones only you have: the loops you run, the parkrun
+you go to. So the store is built for adding your own from the start -- any file `course`
+reads (FIT, GPX, TCX, KML, KMZ), by name, optionally cut from a longer activity: the 5 km
+of a parkrun out of a run that also had the warm-up and the cool-down.
+
+### Public databases: nothing openly licensed that fits
+
+- **parkrun** publishes each event's course map on its own site. There is no open dataset
+  and no API, and parkrun states that it does not condone scraping its data
+  ([parkrun: Scraping](https://www.parkrun.com/scraping/)). Its course maps are not
+  something this repository can bundle, fetch on a user's behalf, or build a feature on.
+- **Marathons and other events** publish their routes, when they do, as downloads under
+  each organiser's own terms, and the routes change from year to year. A user may download
+  one for their own use and add it as a reference; `course` will not fetch or ship them.
+- **OpenStreetMap** has running routes as route relations (`route=running`,
+  `route=fitness_trail`, sometimes a parkrun as `route=foot`). The data is ODbL, which this
+  project already handles for suburb outlines. Coverage is thin and uneven, and measured on
+  the extracts on this machine: Denmark has 6 running routes, 8 fitness trails and one
+  parkrun ("Fælledparken Parkrun"); the Sydney extract has none at all. Whether parkruns
+  belong in OpenStreetMap at all is disputed there
+  ([OSM forum: How to map parkrun?](https://community.openstreetmap.org/t/how-to-map-parkrun/106162)).
+  So an import from an extract already on disk is worth having later -- read with osmbase's
+  PBF reader, offline, carrying the ODbL credit and share-alike with the stored file -- but
+  it is a supplement to your own references, never the source of them.
+
+## How a reference is stored
+
+### The original file, and a manifest beside it
+
+Each reference is a directory holding the file it was made from, byte for byte, and a
+small `reference.json`:
+
+```
+references/
+  rhodes-parkrun/
+    reference.json
+    source.fit
+```
+
+```json
+{
+  "name": "Rhodes parkrun",
+  "aliases": ["rhodes"],
+  "source": "source.fit",
+  "from_m": 1210, "to_m": 6230,
+  "added": "2026-09-29",
+  "note": "the course since the 2025 re-route",
+  "summary": {"length_m": 5020, "loop": true,
+              "bounds": {"west": 151.07, "south": -33.84, "east": 151.09, "north": -33.82}}
+}
+```
+
+Why the original rather than a converted track:
+
+- **Nothing is lost.** Comparing two runs of a course -- pace along it, heart rate at the
+  same hill -- needs everything the recording has, and every conversion so far (FIT to GPX,
+  for one) drops fields. `course` already reads every format; converting would only throw
+  information away to save a reader it has.
+- **Provenance.** A reference is a claim about where a course goes, and the file it came
+  from is the evidence.
+- **A crop is a note, not an edit.** `from_m`/`to_m` (or `from_s`/`to_s` for a file with
+  times and no distance) say which part of the file is the course, so the same recording can
+  be re-cut without re-adding it.
+- A reference with no file to copy -- an OpenStreetMap route, a great circle -- is written
+  as GPX, the one format every tool reads for geometry alone, untimed.
+
+The manifest's `summary` is derived, recomputed whenever it is missing, and exists for one
+reason: to rule a reference out without reading its file. With a few hundred references
+the matcher reads bounds and lengths from the manifests and opens only the ones that could
+match.
+
+### Where the store lives
+
+References are yours, not a cache: they go under the user configuration directory
+(`os.UserConfigDir`, so `~/Library/Application Support/course/references` on macOS), not
+beside osmbase's store under `Caches`, which the system may empty. `--references DIR`
+overrides it. The store is outside every repository, and nothing in it is ever a fixture or
+an example; tests build synthetic courses as they do now.
+
+### What matching and comparison need, and why no special format
+
+Both work on one shape: **the reference as a line with distance along it**, resampled to
+a point every few metres. Every question then becomes "where along the reference is this
+point, and how far off it":
+
+- **Drawing** needs only the line.
+- **Comparison** projects each sample of an activity onto the reference, which gives it a
+  *reference distance*; two runs compared at the same reference distance give the time
+  between them, the pace difference and the deviation, stretch by stretch.
+- **Matching** asks what share of the reference the activity passes within some tolerance
+  of, in order, and where.
+
+That line is quick to build from the original file -- a 5 km course is five hundred points
+-- so it is built when needed, not stored. No geometry database, spatial index or special
+file format is needed at this scale; the manifests' bounds are the index. If the store
+grows to thousands, a cache of resampled lines can be added then without changing what is
+stored.
+
+## Drawing a reference
+
+```
+course map run.fit --reference "Rhodes parkrun"
+course map run.fit --reference other-run.gpx
+course map flight.kml --great-circle
+```
+
+- `--reference` takes a stored name (or alias) or a file. More than one can be given; each
+  gets its own ink.
+- The reference is drawn **dashed, under the course**, in an ink distinct from the course's
+  and from the dashed grey of a recording gap, and checked for contrast against the palette
+  with osmbase's contrast check, as the overlay inks already are.
+- A small **legend** in a corner names what the dashed line is ("--- Rhodes parkrun"): a
+  dashed line on a map with nothing saying what it is invites the wrong reading.
+- The view is fitted to the course **and** its references together, so a reference that
+  goes somewhere the course did not is on the picture.
+- **The great circle** is the shortest path over the globe between start and finish, drawn
+  as a reference named "Great circle", with points every few tens of kilometres along it.
+
+### First, the 180° meridian
+
+A great circle across the Pacific crosses 180°, and so does the Australia-to-USA flight in
+`example_files` -- whose map today draws its Pacific crossing as a dashed line **straight
+across the whole world**, from the eastern Pacific west past Africa to Australia, because a
+line is drawn from one fix to the next and nothing knows that 179° and -179° are neighbours.
+Antimeridian handling was set aside in osmbase earlier. It has to come first here, at least
+for lines: split a line where it crosses 180° into pieces that run off each edge of the
+map. A view centred on the Pacific -- so the whole crossing is on one picture -- is the
+fuller fix and larger, and can follow.
+
+## Matching, later
+
+Once references are stored, a map or a summary can find them unasked:
+
+```
+course match run.fit                 # which references, and where
+course map run.fit --reference auto
+```
+
+- **Rule out** by bounds and start: a reference whose bounds miss the activity's, or whose
+  start the activity never comes near, is not read.
+- **Whole course**: resample both; the share of the reference within ~25 m of the activity,
+  the share of the activity within ~25 m of the reference, and order -- an alignment that
+  must move forward along both (dynamic time warping, or the discrete Fréchet distance, with
+  a band), so a loop run backwards or a different lap order does not score as the course.
+- **Part of an activity**: the parkrun inside a run with a warm-up and a cool-down. For
+  each place the activity passes near the reference's start, take the stretch of the
+  activity about as long as the reference (within ±10%) and score it the same way; the best
+  stretch above the threshold is the match, with where it starts and ends in the activity.
+- **Result**: the reference, the stretch of the activity, and how well -- coverage, median
+  and worst deviation -- so a map can say "Rhodes parkrun, 0.4 km in to 5.4 km, within 6 m".
+
+Averaging many runs of one course into a reference -- eighty parkruns make a better line
+than any one of them -- falls out of the same alignment, and is a later refinement.
+
+## Comparison, later
+
+`course compare run.fit --reference "Rhodes parkrun"` -- or a stored run as the reference --
+aligns both by reference distance and reports the time between them, split by kilometre or
+by stretch, and optionally colours the course on the map by ahead and behind. It needs the
+reference to keep its times, which the original file does.
+
+## Parts
+
+| # | part | where | done when |
+|---|---|---|---|
+| 0 | Lines across 180° | osmbase render | a line crossing the antimeridian is split into pieces running off each edge; the trans-Pacific flight's map shows no line across the world |
+| 1 | Draw a reference from a file, and the great circle | course | `--reference FILE` and `--great-circle` draw dashed, under the course, with a legend; the view holds both |
+| 2 | The reference store | course | `course reference add/list/show/remove`, crops by distance or time, names and aliases in `--reference` |
+| 3 | Matching | course | `course match`, whole and partial, `--reference auto` |
+| 4 | Comparison | course | time and pace difference along a reference |
+| 5 | OpenStreetMap routes | course, osmbase's PBF reader | `course reference import-osm RELATION --extract FILE`, offline, ODbL carried |
+
+## Open questions
+
+- **The store's location**: the user configuration directory, as above, or somewhere you
+  prefer.
+- **Several references on one map**: allowed from the start, each in its own ink, or one at
+  a time until the legend has proved itself.
+- **Matching tolerance**: 25 m is a guess for GPS on foot; measure it on the parkruns.
