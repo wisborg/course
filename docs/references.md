@@ -26,15 +26,13 @@ of a parkrun out of a run that also had the warm-up and the cool-down.
   each organiser's own terms, and the routes change from year to year. A user may download
   one for their own use and add it as a reference; `course` will not fetch or ship them.
 - **OpenStreetMap** has running routes as route relations (`route=running`,
-  `route=fitness_trail`, sometimes a parkrun as `route=foot`). The data is ODbL, which this
-  project already handles for suburb outlines. Coverage is thin and uneven, and measured on
-  the extracts on this machine: Denmark has 6 running routes, 8 fitness trails and one
-  parkrun ("Fælledparken Parkrun"); the Sydney extract has none at all. Whether parkruns
-  belong in OpenStreetMap at all is disputed there
+  `route=fitness_trail`, sometimes a parkrun as `route=foot`), under the ODbL. Coverage is
+  thin and uneven, measured on the extracts on this machine: Denmark has 6 running routes,
+  8 fitness trails and one parkrun ("Fælledparken Parkrun"); the Sydney extract has none at
+  all. Whether parkruns belong in OpenStreetMap at all is disputed there
   ([OSM forum: How to map parkrun?](https://community.openstreetmap.org/t/how-to-map-parkrun/106162)).
-  So an import from an extract already on disk is worth having later -- read with osmbase's
-  PBF reader, offline, carrying the ODbL credit and share-alike with the stored file -- but
-  it is a supplement to your own references, never the source of them.
+  **Decided: no import.** At this coverage it is not worth the code and the licence
+  handling; an official course downloaded by hand is added like any other reference.
 
 ## How a reference is stored
 
@@ -84,9 +82,9 @@ match.
 
 ### Where the store lives
 
-References are yours, not a cache: they go under the user configuration directory
-(`os.UserConfigDir`, so `~/Library/Application Support/course/references` on macOS), not
-beside osmbase's store under `Caches`, which the system may empty. `--references DIR`
+**Decided:** references are yours, not a cache: they go under the user configuration
+directory (`os.UserConfigDir`, so `~/Library/Application Support/course/references` on
+macOS), not beside osmbase's store under `Caches`, which the system may empty. `--references DIR`
 overrides it. The store is outside every repository, and nothing in it is ever a fixture or
 an example; tests build synthetic courses as they do now.
 
@@ -117,8 +115,8 @@ course map run.fit --reference other-run.gpx
 course map flight.kml --great-circle
 ```
 
-- `--reference` takes a stored name (or alias) or a file. More than one can be given; each
-  gets its own ink.
+- `--reference` takes a stored name (or alias) or a file. **Decided:** more than one can be
+  given from the start, each in its own ink and named in the legend.
 - The reference is drawn **dashed, under the course**, in an ink distinct from the course's
   and from the dashed grey of a recording gap, and checked for contrast against the palette
   with osmbase's contrast check, as the overlay inks already are.
@@ -159,6 +157,11 @@ course map run.fit --reference auto
   each place the activity passes near the reference's start, take the stretch of the
   activity about as long as the reference (within ±10%) and score it the same way; the best
   stretch above the threshold is the match, with where it starts and ends in the activity.
+- **Several references in one activity**: two parkruns in one morning, with a warm-up, the
+  commute between them and a cool-down. Matching finds every stretch that matches some
+  reference, not only the best one, and the stretches may not overlap; the rest of the
+  activity is the part that matched nothing. `--reference auto` then draws each reference
+  it found.
 - **Result**: the reference, the stretch of the activity, and how well -- coverage, median
   and worst deviation -- so a map can say "Rhodes parkrun, 0.4 km in to 5.4 km, within 6 m".
 
@@ -181,12 +184,23 @@ reference to keep its times, which the original file does.
 | 2 | The reference store | course | `course reference add/list/show/remove`, crops by distance or time, names and aliases in `--reference` |
 | 3 | Matching | course | `course match`, whole and partial, `--reference auto` |
 | 4 | Comparison | course | time and pace difference along a reference |
-| 5 | OpenStreetMap routes | course, osmbase's PBF reader | `course reference import-osm RELATION --extract FILE`, offline, ODbL carried |
+
+## Courses to test against
+
+Real recordings, for checking by hand; never fixtures.
+
+- **Rhodes parkrun**, four runs (`rhodes_parkrun_*`), and 2026-08-22's among them. The one
+  on 2026-06-13 took a slightly different course with a bridge closed: it should match, less
+  well, and the difference should show where the bridge was.
+- **Two parkruns in one morning**: the 2025-06-28 files in fitdash's example_files, which
+  merge into one run with a warm-up, both parkruns, the commute between them and a cool-down.
+- **An official course against the run**: `Three Bridges.gpx`, the organisers' course for the
+  2026-09-27 race -- with two road-work detours the file may not show and one to a toilet --
+  and `TCS_Sydney_Marathon_2026_Course.gpx` for the 2025-08-31 marathon. Planned courses with
+  no times: they test matching a plan against a recording, and deviations that are real.
 
 ## Open questions
 
-- **The store's location**: the user configuration directory, as above, or somewhere you
-  prefer.
-- **Several references on one map**: allowed from the start, each in its own ink, or one at
-  a time until the legend has proved itself.
-- **Matching tolerance**: 25 m is a guess for GPS on foot; measure it on the parkruns.
+- **Matching tolerance**: 25 m is a starting guess for GPS on foot; to be settled by
+  experiment on the courses above -- the closed bridge and the detours are the cases that
+  say how tight it can be.
