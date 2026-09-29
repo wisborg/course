@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ var summaryOpts struct {
 	archive  string
 	language string
 	prefix   string
+	gap      float64
 	yes      bool
 	format   formatFlag
 }
@@ -36,6 +38,11 @@ var summaryCmd = &cobra.Command{
 	Long: `summary says where a course went: by default as one line, a chain of the
 places it passed through, and with --detailed as the change log behind it --
 one row each time the course entered a different place, with how far in it was.
+
+At street depth, a stretch on no named way -- a path, a station concourse --
+is named by its suburb when it is at least --suburb-gap metres long or in a
+suburb other than the streets either side; otherwise it is left out of the
+line, and shown in --detailed.
 
 --depth is the finest level named: country, region, city, locality, macrohood,
 neighbourhood, area (a park, a campus, an airport) or street. Named water -- a sea, a strait, a bay -- is named at
@@ -58,6 +65,7 @@ func init() {
 	f.StringVar(&summaryOpts.language, "lang", "", "prefer names in this language, e.g. en; default is the local spelling")
 	f.StringVar(&summaryOpts.prefix, "prefix", "city", "what the one line names ahead of its chain: city (the city's mapped extent, or the place whose reach the course is most within), locality (the locality level's answer), or none")
 	f.BoolVar(&summaryOpts.yes, "yes", false, "fetch the map the summary needs without asking")
+	f.Float64Var(&summaryOpts.gap, "suburb-gap", summary.DefaultSuburbGap, "at street depth, how long in metres a stretch on no named way must be to be named by its suburb when the streets either side are in the same one")
 	summaryOpts.format = formatFlag{Format: output.Text}
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
 	root.AddCommand(summaryCmd)
@@ -114,7 +122,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	s, err := summary.Summarise(cmd.Context(), c, st.tileSource(), summary.Options{
 		Depth: depth, Auto: auto, MaxRows: summaryOpts.maxRows,
 		Language: summaryOpts.language, Boundaries: st.boundarySource(),
-		Holdings: st.holdings(), Prefix: pre,
+		Holdings: st.holdings(), Prefix: pre, SuburbGap: summaryOpts.gap,
 	})
 	if err != nil {
 		return err
@@ -332,6 +340,7 @@ func clock(d time.Duration) string {
 type jsonRow struct {
 	ElapsedS  *float64       `json:"elapsed_s,omitempty"`
 	DistanceM *float64       `json:"distance_m,omitempty"`
+	LengthM   *float64       `json:"length_m,omitempty"`
 	Latitude  float64        `json:"latitude"`
 	Longitude float64        `json:"longitude"`
 	Places    []locate.Match `json:"places"`
@@ -371,7 +380,10 @@ func jsonSummary(c *course.Course, s *summary.Summary, credits []string) jsonDoc
 		Prefix: s.Prefix, Departure: s.Departure, Arrival: s.Arrival,
 		Dropped: c.Dropped, Credits: credits, Rows: []jsonRow{}}
 	for _, r := range s.Rows {
-		d.Rows = append(d.Rows, conv(r.Mark, r.Lat, r.Lon, r.Places))
+		row := conv(r.Mark, r.Lat, r.Lon, r.Places)
+		length := math.Round(r.Length)
+		row.LengthM = &length
+		d.Rows = append(d.Rows, row)
 	}
 	last := c.Points[len(c.Points)-1]
 	if f := conv(s.Finish, last.Lat, last.Lon, nil); f.ElapsedS != nil || f.DistanceM != nil {

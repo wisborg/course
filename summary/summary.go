@@ -65,7 +65,19 @@ type Options struct {
 	Holdings Holdings
 	// Prefix is where the one-liner's leading "Sydney:" comes from.
 	Prefix Prefix
+	// SuburbGap is how long, in metres, a stretch on no named way must be
+	// for a street-depth one-liner to name it by its suburb even when that
+	// is the suburb the chain was already in; 0 is DefaultSuburbGap. See
+	// Summary.OneLiner.
+	SuburbGap float64
 }
+
+// DefaultSuburbGap is Options.SuburbGap's default.
+//
+// Measured on the courses that set the rule: a 261 m stretch through Hornsby
+// station's concourse, in Hornsby between two streets in Hornsby, says
+// nothing; a kilometre on a path through Rhodes says where the course went.
+const DefaultSuburbGap = 300.0
 
 // Prefix is where a summary finer than a locality takes the place it names
 // ahead of the chain: "Sydney: Woolloomooloo → Darlinghurst".
@@ -120,6 +132,8 @@ type Summary struct {
 	Rows []Row `json:"rows"`
 	// Finish is where the course ended: its elapsed time and distance.
 	Finish Mark `json:"finish"`
+	// SuburbGap is Options.SuburbGap, resolved; see OneLiner.
+	SuburbGap float64 `json:"-"`
 	// Prefix is the one place the whole course was in, named ahead of the
 	// chain when the depth is finer than a locality; empty when there is no
 	// one place, or the depth is a locality or wider.
@@ -153,6 +167,10 @@ type Row struct {
 	// Places are the answers at the levels reported, widest first; a level
 	// with no answer is absent.
 	Places []locate.Match `json:"places"`
+	// Length is how far the course went in this row's place, in metres
+	// along the line looked up -- measured, not recorded, so a course with
+	// no recorded distance has it too.
+	Length float64 `json:"length_m"`
 }
 
 // Summarise looks the course up and returns its change log.
@@ -195,7 +213,10 @@ func Summarise(ctx context.Context, c *course.Course, src locate.TileSource, o O
 		return nil, err
 	}
 
-	s := &Summary{Depth: finest, Auto: o.Auto, Timed: c.Timed, Measured: measured(c)}
+	s := &Summary{Depth: finest, Auto: o.Auto, Timed: c.Timed, Measured: measured(c), SuburbGap: o.SuburbGap}
+	if s.SuburbGap <= 0 {
+		s.SuburbGap = DefaultSuburbGap
+	}
 	if s.Short, err = shortfalls(pts, levelsTo(finest), o); err != nil {
 		return nil, err
 	}
@@ -621,7 +642,7 @@ func (t track) rows(d locate.Level, limit int) []Row {
 	rows := make([]Row, len(runs))
 	for i, r := range runs {
 		p := t.c.Points[t.idx[r.first]]
-		rows[i] = Row{Mark: mark(t.c, p), Lat: p.Lat, Lon: p.Lon, Places: t.names(r, levels)}
+		rows[i] = Row{Mark: mark(t.c, p), Lat: p.Lat, Lon: p.Lon, Places: t.names(r, levels), Length: r.length}
 	}
 	return rows
 }
@@ -779,6 +800,35 @@ func (r Row) finest() locate.Level {
 	return f
 }
 
+// suburb is the finest name a row has below an area: the suburb, or what
+// stands for one where there is none.
+func (r Row) suburb() string {
+	name := ""
+	for _, m := range r.Places {
+		if m.Level != locate.Water && m.Level < locate.Area {
+			name = m.Name
+		}
+	}
+	return name
+}
+
+// suburbBefore is the suburb the chain was in before row i: the suburb of
+// the nearest row before it on a named way or in an area, or of the nearest
+// after it for a stretch at the start.
+func (s *Summary) suburbBefore(i int) string {
+	for k := i - 1; k >= 0; k-- {
+		if s.Rows[k].finest() >= locate.Area {
+			return s.Rows[k].suburb()
+		}
+	}
+	for k := i + 1; k < len(s.Rows); k++ {
+		if s.Rows[k].finest() >= locate.Area {
+			return s.Rows[k].suburb()
+		}
+	}
+	return ""
+}
+
 // anyAt reports whether any row names a place at level l or finer.
 func (s *Summary) anyAt(l locate.Level) bool {
 	for _, r := range s.Rows {
@@ -818,22 +868,44 @@ func (r Row) Label() string {
 // airports at the ends of a flight beside the first and last names.
 func (s *Summary) OneLiner() string {
 	var parts []string
-	gaps := s.Depth == locate.Street && s.anyAt(locate.Area)
-	for _, r := range s.Rows {
-		// At street depth, a stretch on no named way and in no area is a gap
-		// between two that are -- a station concourse, an unnamed footpath
-		// -- and naming it by the suburb around it put "Hornsby" between two
-		// streets of a walk round Hornsby. The table keeps the row; the
-		// chain leaves it out. Only at street depth: areas are few, and at
-		// area depth the suburbs between two parks are where the course was.
-		if gaps && r.finest() < locate.Area {
+	add := func(l string) {
+		if l != "" && (len(parts) == 0 || parts[len(parts)-1] != l) {
+			parts = append(parts, l)
+		}
+	}
+	streets := s.Depth == locate.Street && s.anyAt(locate.Area)
+	for i := 0; i < len(s.Rows); i++ {
+		r := s.Rows[i]
+		if !streets || r.finest() >= locate.Area {
+			add(r.Label())
 			continue
 		}
-		l := r.Label()
-		if l == "" || (len(parts) > 0 && parts[len(parts)-1] == l) {
-			continue
+		// At street depth, a stretch on no named way and in no area -- a
+		// station concourse, a path along a creek -- is named by its suburbs
+		// only when that says something: when it is long enough to be part
+		// of the course in its own right, or when it is in a suburb other
+		// than the one the chain was last in. A short stretch through the
+		// suburb the streets either side are in is a gap between them, and
+		// naming it put "Hornsby" between two streets of a walk round
+		// Hornsby. The table keeps every row; this is the chain.
+		j, length, other := i, 0.0, false
+		was := s.suburbBefore(i)
+		gap := s.SuburbGap
+		if gap <= 0 {
+			gap = DefaultSuburbGap
 		}
-		parts = append(parts, l)
+		for ; j < len(s.Rows) && s.Rows[j].finest() < locate.Area; j++ {
+			length += s.Rows[j].Length
+			if l := s.Rows[j].Label(); l != was {
+				other = true
+			}
+		}
+		if length >= gap || other {
+			for k := i; k < j; k++ {
+				add(s.Rows[k].Label())
+			}
+		}
+		i = j - 1
 	}
 	if len(parts) == 1 && s.Arrival != nil {
 		// One place throughout, and an airport at the end: the start and the

@@ -31,6 +31,11 @@ suburb outlines answer it) or `none`. A loop run more than once is written once,
 `4x (James Park → Hornsby)`, and a flight names the airports it left and reached where the
 store holds them.
 
+At street depth, a stretch on no named way -- a path along a creek, a station concourse -- is
+named by its suburb when it is at least `--suburb-gap` metres long (300) or in a different
+suburb from the streets either side, and otherwise left out of the line as a gap between
+two streets. `--detailed` shows every stretch, with its length.
+
 A course reports what its file recorded and nothing else. A GPX has no distance, so its
 rows have none; a planned route has no times, so its rows have no elapsed time. Neither
 is estimated.

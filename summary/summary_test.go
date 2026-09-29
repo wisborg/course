@@ -486,28 +486,72 @@ func TestPrefixIsTheOnePlaceTheCourseWasIn(t *testing.T) {
 	}
 }
 
-// At street depth, a row on no named way and in no area is a gap in the
-// chain, not the suburb around it; at area depth or wider, or when no row
-// names a street or an area at all, every row is named as before.
-func TestOneLinerLeavesOutStretchesOnNoNamedWay(t *testing.T) {
-	row := func(levels ...locate.Match) Row { return Row{Places: levels} }
-	suburb := locate.Match{Level: locate.Neighbourhood, Name: "Suburb"}
+// At street depth, a stretch on no named way and in no area is named by its
+// suburbs when it is long enough, or in a suburb other than the one the
+// chain was last in, and left out otherwise; at area depth or wider, or when
+// no row names a street or an area at all, every row is named as before.
+func TestOneLinerNamesAStretchOnNoNamedWayOnlyWhenItSaysSomething(t *testing.T) {
+	sub := func(n string) locate.Match { return locate.Match{Level: locate.Neighbourhood, Name: n} }
 	street := func(n string) locate.Match { return locate.Match{Level: locate.Street, Name: n} }
-	s := &Summary{Depth: locate.Street, Rows: []Row{row(suburb, street("First Street")), row(suburb), row(suburb, street("Second Street"))}}
-	if got := s.OneLiner(); got != "First Street → Second Street" {
-		t.Errorf("street depth: %q", got)
+	row := func(length float64, ms ...locate.Match) Row { return Row{Places: ms, Length: length} }
+	for _, tc := range []struct {
+		name string
+		rows []Row
+		want string
+	}{
+		{"a short stretch in the same suburb is a gap",
+			[]Row{row(100, sub("Home"), street("First Street")), row(261, sub("Home")), row(100, sub("Home"), street("Second Street"))},
+			"First Street → Second Street"},
+		{"a long stretch in the same suburb is named",
+			[]Row{row(100, sub("Home"), street("First Street")), row(1012, sub("Home")), row(100, sub("Home"), street("Second Street"))},
+			"First Street → Home → Second Street"},
+		{"a short stretch in another suburb is named",
+			[]Row{row(100, sub("Home"), street("First Street")), row(130, sub("Away")), row(100, sub("Home"), street("Second Street"))},
+			"First Street → Away → Second Street"},
+		{"a stretch across several suburbs is measured whole and named in order",
+			[]Row{row(100, sub("Home"), street("First Street")), row(150, sub("Home")), row(200, sub("Home")),
+				row(100, sub("Home"), street("Second Street"))},
+			"First Street → Home → Second Street"},
+		{"a stretch at the start compares with the street after it",
+			[]Row{row(100, sub("Home")), row(100, sub("Home"), street("First Street"))},
+			"First Street"},
+	} {
+		s := &Summary{Depth: locate.Street, Rows: tc.rows}
+		if got := s.OneLiner(); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
 	}
-	s.Rows = []Row{row(suburb), row(suburb)}
-	if got := s.OneLiner(); got != "Suburb" {
+
+	s := &Summary{Depth: locate.Street, SuburbGap: 2000, Rows: []Row{
+		row(100, sub("Home"), street("First Street")), row(1012, sub("Home")), row(100, sub("Home"), street("Second Street"))}}
+	if got := s.OneLiner(); got != "First Street → Second Street" {
+		t.Errorf("with a 2 km gap, a kilometre in the same suburb is named: %q", got)
+	}
+	s = &Summary{Depth: locate.Street, Rows: []Row{row(100, sub("Home")), row(100, sub("Home"))}}
+	if got := s.OneLiner(); got != "Home" {
 		t.Errorf("street depth with no street at all: %q", got)
 	}
-	s = &Summary{Depth: locate.Neighbourhood, Rows: []Row{row(suburb), row(locate.Match{Level: locate.Neighbourhood, Name: "Other"})}}
-	if got := s.OneLiner(); got != "Suburb → Other" {
-		t.Errorf("neighbourhood depth: %q", got)
-	}
-	park := locate.Match{Level: locate.Area, Name: "The Park"}
-	s = &Summary{Depth: locate.Area, Rows: []Row{row(suburb), row(suburb, park), row(locate.Match{Level: locate.Neighbourhood, Name: "Other"})}}
-	if got := s.OneLiner(); got != "Suburb → The Park → Other" {
+	s = &Summary{Depth: locate.Area, Rows: []Row{row(100, sub("Home")), row(100, sub("Home"), locate.Match{Level: locate.Area, Name: "The Park"}), row(100, sub("Away"))}}
+	if got := s.OneLiner(); got != "Home → The Park → Away" {
 		t.Errorf("area depth, the suburbs either side of a park: %q", got)
+	}
+}
+
+// Each row carries how far the course went in its place.
+func TestRowsCarryTheirLength(t *testing.T) {
+	c := line(300, 0.0001) // 3.3 km; a suburb every 1.1 km
+	s := summarise(t, c, onlyLevels(world{locate.Neighbourhood: every("Suburb", 0.01)}), Options{Depth: locate.Neighbourhood})
+	if len(s.Rows) != 3 {
+		t.Fatalf("%d rows", len(s.Rows))
+	}
+	total := 0.0
+	for _, r := range s.Rows {
+		total += r.Length
+	}
+	if got := s.Rows[1].Length; got < 1000 || got > 1200 {
+		t.Errorf("the middle suburb is %.0f m long; want about 1100", got)
+	}
+	if total < 3200 || total > 3400 {
+		t.Errorf("the rows add up to %.0f m of a 3.3 km course", total)
 	}
 }
