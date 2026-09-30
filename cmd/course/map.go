@@ -46,7 +46,8 @@ var mapOpts struct {
 	gradeCap      float64
 	power         string
 	legend        string
-	title         string
+	titles        []string
+	separate      bool
 }
 
 var mapCmd = &cobra.Command{
@@ -88,7 +89,8 @@ func init() {
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
 	f.StringVar(&mapOpts.legend, "legend", "auto", "where the legend goes: top-left, top-right, bottom-left or bottom-right; auto for whichever of them covers least of the course; none for no legend")
-	f.StringVar(&mapOpts.title, "title", "", "what the legend calls the course (default: its file's name)")
+	f.StringArrayVar(&mapOpts.titles, "title", nil, "what the legend calls the course (default: its file's name); with --separate, once for each activity, in the order given")
+	f.BoolVar(&mapOpts.separate, "separate", false, "draw several files as separate activities, each in its own colour with its own start and finish, rather than merged into one")
 	f.StringVar(&mapOpts.colour, "colour", "", "colour the course by a metric along it: pace, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power or cadence")
 	f.StringVar(&mapOpts.power, "power-source", "auto", "with --colour power, which power reading when the file carries both a footpod's (Stryd) developer field and the standard FIT power field -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; the two can disagree, being different sensors")
 	f.Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
@@ -125,9 +127,30 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if !slices.Contains(append([]string{"auto", "none"}, legendCorners...), mapOpts.legend) {
 		return fmt.Errorf("--legend %q: use %s, auto or none", mapOpts.legend, strings.Join(legendCorners, ", "))
 	}
-	name := nameOf(args[0])
-	if mapOpts.title != "" {
-		name = mapOpts.title
+	names, err := activityNames(args, mapOpts.titles, mapOpts.separate)
+	if err != nil {
+		return err
+	}
+	name := names[0]
+	activities := []*course.Course{c}
+	if mapOpts.separate {
+		if mapOpts.compare != "" {
+			return errors.New("--compare compares one run with another; merge the files, without --separate")
+		}
+		activities = nil
+		for _, a := range args {
+			one, err := course.Read(a)
+			if err != nil {
+				return err
+			}
+			if len(one.Points) == 0 {
+				return fmt.Errorf("%s has no positions to draw", a)
+			}
+			activities = append(activities, one)
+		}
+		if len(activities) > 1 {
+			name = fmt.Sprintf("%d activities", len(activities))
+		}
 	}
 	if err := checkColour(c, colours); err != nil {
 		return err
@@ -171,12 +194,16 @@ func runMap(cmd *cobra.Command, args []string) error {
 	face := faceAt(baseTextSize * scale)
 	inks := routemap.InksFor(palette, overlay)
 	drawing := routemap.Drawing(c, view, inks, scale)
+	actInks := routemap.ActivityInks(palette, overlay)
+	if len(activities) > 1 {
+		drawing = routemap.ActivitiesDrawing(activities, view, inks, actInks, scale)
+	}
 	var col *colouring
 	switch {
 	case mapOpts.compare != "":
 		col, err = compareWith(c, name, mapOpts.compare, scale)
 	case mapOpts.colour != "":
-		col, err = colourBy(c, name, colours, scale)
+		col, err = colourBy(activities, name, colours, scale)
 	}
 	if err != nil {
 		return err
@@ -199,12 +226,18 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	// A legend is drawn when there is more than the course to tell apart,
 	// or when one was asked for by name or place; never with --legend none.
-	asked := mapOpts.title != "" || (mapOpts.legend != "auto" && mapOpts.legend != "none")
-	if (len(refs) > 0 || col != nil || asked) && mapOpts.legend != "none" {
+	asked := len(mapOpts.titles) > 0 || (mapOpts.legend != "auto" && mapOpts.legend != "none")
+	if (len(refs) > 0 || col != nil || asked || len(activities) > 1) && mapOpts.legend != "none" {
 		var legend []entry
-		if col == nil {
+		switch {
+		case col == nil && len(activities) > 1:
+			// Numbered as their starts and finishes are on the map.
+			for i := range activities {
+				legend = append(legend, entry{name: fmt.Sprintf("%d  %s", i+1, names[i]), ink: actInks[i%len(actInks)]})
+			}
+		case col == nil:
 			legend = append(legend, entry{name: name, ink: inks.Route})
-		} else {
+		default:
 			legend = append(legend, entry{name: col.legend, ramp: &col.ramp})
 		}
 		for i, r := range refs {

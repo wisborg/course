@@ -7,8 +7,13 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/wisborg/fitactivity/fittest"
+
+	"github.com/wisborg/course/routemap"
 )
 
 // A legend goes margin in from the corner asked for, and in the bottom right
@@ -162,5 +167,120 @@ func TestCreditSpace(t *testing.T) {
 	}
 	if got := creditSpace("", face, 6); got != 0 {
 		t.Errorf("with none, %d, want 0", got)
+	}
+}
+
+// Merged, the files are one course with one name; separate, each has its
+// own, its title if every one was given one.
+func TestActivityNames(t *testing.T) {
+	files := []string{"dir/a.fit", "dir/b.gpx"}
+	for _, c := range []struct {
+		titles   []string
+		separate bool
+		want     []string
+		err      string
+	}{
+		{nil, false, []string{"a"}, ""},
+		{[]string{"Morning"}, false, []string{"Morning"}, ""},
+		{[]string{"x", "y"}, false, nil, "2 titles for one merged course"},
+		{nil, true, []string{"a", "b"}, ""},
+		{[]string{"Warm-up", "Parkrun"}, true, []string{"Warm-up", "Parkrun"}, ""},
+		{[]string{"Warm-up"}, true, nil, "1 titles for 2 activities"},
+	} {
+		got, err := activityNames(files, c.titles, c.separate)
+		if c.err != "" {
+			if err == nil || !strings.Contains(err.Error(), c.err) {
+				t.Errorf("%v %v: %v, want an error saying %q", c.titles, c.separate, err, c.err)
+			}
+			continue
+		}
+		if err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("%v %v: %v %v, want %v", c.titles, c.separate, got, err, c.want)
+		}
+	}
+}
+
+// --separate draws each file as its own activity, the second in the second
+// activity ink; merged, the same files are one course in one ink. --compare
+// and --separate together are refused, as are activities that count cadence
+// in different units coloured on one scale.
+func TestMapSeparate(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	one, two, out := filepath.Join(dir, "one.gpx"), filepath.Join(dir, "two.gpx"), filepath.Join(dir, "map.png")
+	writeLine(t, one, 10, 20, 0.0002, 50)
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 50; i++ { // a kilometre north, an hour later
+		fmt.Fprintf(&b, `<trkpt lat="10.01" lon="%s"><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.0002), stamp(3600+i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, two, b.String())
+	store := filepath.Join(dir, "store")
+	palette, overlay, err := paletteNamed("light")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := routemap.ActivityInks(palette, overlay)[1]
+
+	draw := func(args ...string) image.Image {
+		t.Helper()
+		resetNow(mapCmd)
+		all := append([]string{"map", "--store", store, "--out", out, "--width", "1200", "--height", "900"}, args...)
+		if o, err := run(t, append(all, one, two)...); err != nil {
+			t.Fatalf("map %v: %v\n%s", args, err, o)
+		}
+		f, err := os.Open(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		img, err := png.Decode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return img
+	}
+	inSecond := func(img image.Image) bool {
+		// Right of the legend, which has a sample of every ink.
+		return hasColour(img, [3]uint8{second.R, second.G, second.B}, 200, 1200, 0, 900)
+	}
+	if img := draw("--separate", "--title", "One", "--title", "Two"); !inSecond(img) {
+		t.Error("--separate: the second activity is not in the second activity ink")
+	}
+	if img := draw(); inSecond(img) {
+		t.Error("merged: part of the course is in the second activity ink")
+	}
+
+	fit := filepath.Join(dir, "run.fit")
+	opts := fittest.DefaultOptions()
+	opts.Count = 300
+	if err := fittest.WriteFile(fit, opts); err != nil {
+		t.Fatal(err)
+	}
+	cad := filepath.Join(dir, "cad.gpx")
+	b.Reset()
+	b.WriteString(`<gpx xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><trkseg>`)
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><time>%s</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>`, ftoa6(20+float64(i)*0.0002), stamp(i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, cad, b.String())
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--separate", "--compare", one, one, two}, "--compare compares one run"},
+		{[]string{"--separate", "--colour", "cadence", fit, cad}, "different units"},
+		{[]string{"--separate", "--title", "Only one", one, two}, "1 titles for 2 activities"},
+	} {
+		resetNow(mapCmd)
+		_, err := run(t, append([]string{"map", "--store", store, "--out", out}, c.args...)...)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("map %v: %v, want an error saying %q", c.args, err, c.want)
+		}
 	}
 }

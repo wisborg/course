@@ -68,6 +68,22 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
+### Several activities
+
+```
+./course map warm-up.fit parkrun.fit cool-down.fit                # merged into one
+./course map --separate warm-up.fit parkrun.fit cool-down.fit     # each on its own
+```
+
+Several files are merged into one activity, ordered by when each started -- a run recorded in
+pieces, as fitdash merges them -- and drawn as one course, with a dashed gap wherever the
+recording has one. `--separate` draws each as its own activity instead: in its own colour,
+with its own distance markers and its own start and finish, numbered in the order the files
+were given, and a legend line for each, its file's name or one `--title` for each file in
+turn. Where one activity finishes and the next starts, the two are one dot labelled with both,
+"Finish 1 · Start 2". With `--colour`, the activities share one scale, so the same colour is
+the same pace, or grade, on each.
+
 ### The legend
 
 A map with references or colours has a legend saying what each line or colour is. By default

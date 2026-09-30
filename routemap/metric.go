@@ -287,24 +287,37 @@ func Spread(values []float64, tail float64) (lo, hi float64, ok bool) {
 // becomes a standstill. Counted by ground it is none. Where the course never
 // moves, it is Spread.
 func SpreadAlong(c *course.Course, values []float64, tail float64) (lo, hi float64, ok bool) {
-	along := c.Along()
+	return SpreadAlongAll([]*course.Course{c}, [][]float64{values}, tail)
+}
+
+// SpreadAlongAll is SpreadAlong over several courses at once -- activities
+// drawn on one map on one scale -- each value counted for the ground around
+// it within its own course, so the way from one activity's finish to the
+// next one's start, which nobody ran, counts for nothing.
+func SpreadAlongAll(cs []*course.Course, values [][]float64, tail float64) (lo, hi float64, ok bool) {
 	type weighed struct{ v, w float64 }
 	var known []weighed
+	var all []float64
 	var total float64
-	for i, v := range values {
-		if math.IsNaN(v) {
-			continue
+	for k, c := range cs {
+		along := c.Along()
+		vs := values[k]
+		for i, v := range vs {
+			if math.IsNaN(v) {
+				continue
+			}
+			a, b := max(i-1, 0), min(i+1, len(vs)-1)
+			w := (along[b] - along[a]) / 2
+			known = append(known, weighed{v, w})
+			all = append(all, v)
+			total += w
 		}
-		a, b := max(i-1, 0), min(i+1, len(values)-1)
-		w := (along[b] - along[a]) / 2
-		known = append(known, weighed{v, w})
-		total += w
 	}
 	if len(known) == 0 {
 		return 0, 0, false
 	}
 	if !(total > 0) {
-		return Spread(values, tail)
+		return Spread(all, tail)
 	}
 	sort.Slice(known, func(i, j int) bool { return known[i].v < known[j].v })
 	at := func(q float64) float64 {

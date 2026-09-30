@@ -175,3 +175,35 @@ func TestWithReferencesKeepsTheCourseWideForDepartures(t *testing.T) {
 		t.Errorf("with nothing of the reference to draw, the drawing changed: %+v", got.Lines)
 	}
 }
+
+// Several activities' inks read on their map, differ from each other, and
+// are none of the references' or of a course's own start, finish or gap.
+func TestActivityInksReadOnTheirMap(t *testing.T) {
+	for name, pal := range map[string]struct {
+		p render.Palette
+		o render.Overlay
+	}{"light": {render.LightPalette(), render.LightOverlay()}, "dark": {render.DarkPalette(), render.DarkOverlay()}} {
+		own := InksFor(pal.p, pal.o)
+		inks := ActivityInks(pal.p, pal.o)
+		if inks[0] != own.Route {
+			t.Errorf("%s palette: the first activity is not in the course's own ink", name)
+		}
+		seen := map[color.RGBA]bool{}
+		for i, ink := range inks {
+			if seen[ink] {
+				t.Errorf("%s palette: activity ink %d repeats one before it", name, i)
+			}
+			seen[ink] = true
+			for what, under := range map[string]color.RGBA{"land": pal.p.Land, "water": pal.p.Water, "background": pal.p.Background} {
+				if got := render.ContrastRatio(ink, under); got < 2.5 {
+					t.Errorf("%s palette: activity ink %d is %.2f against %s", name, i, got, what)
+				}
+			}
+			for _, o := range append([]color.RGBA{own.Start, own.Finish, own.Gap}, ReferenceInks(pal.p)...) {
+				if o == ink {
+					t.Errorf("%s palette: activity ink %d is a reference's or a course's own", name, i)
+				}
+			}
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -164,4 +165,32 @@ func drawLegend(img *image.RGBA, entries []entry, face font.Face, scale float64,
 		}
 		text(e.name, x0+sample+pad, mid)
 	}
+}
+
+// activityNames are what the legend calls each file's activity: its title
+// if --title gave one, and its file's name otherwise. Merged into one, the
+// files are one course with one name, the first file's; drawn separately,
+// each has its own. Titles are given once each, in the files' order: fewer
+// or more would leave which title is whose to a guess.
+func activityNames(files, titles []string, separate bool) ([]string, error) {
+	if !separate {
+		if len(titles) > 1 {
+			return nil, fmt.Errorf("%d titles for one merged course; give one, or --separate to title each file", len(titles))
+		}
+		if len(titles) == 1 {
+			return titles, nil
+		}
+		return []string{nameOf(files[0])}, nil
+	}
+	if len(titles) > 0 && len(titles) != len(files) {
+		return nil, fmt.Errorf("%d titles for %d activities; give one --title for each, in the order of the files", len(titles), len(files))
+	}
+	names := make([]string, len(files))
+	for i, f := range files {
+		names[i] = nameOf(f)
+		if len(titles) > 0 {
+			names[i] = titles[i]
+		}
+	}
+	return names, nil
 }

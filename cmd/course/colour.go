@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/wisborg/fitactivity"
 	"github.com/wisborg/osmbase/render"
@@ -159,37 +160,56 @@ func checkColour(c *course.Course, o colourOptions) error {
 // a staircase at -26% stretched the scale until a 14% bridge ramp was yellow
 // and the rest of a half marathon one green. A mountain hike with long
 // stretches steeper than 15% wants a higher one, or they are all one colour.
-func colourBy(c *course.Course, name string, o colourOptions, scale float64) (*colouring, error) {
-	switch o.metric {
-	case "pace":
-		speed := routemap.Speed(c, paceAround)
-		lo, hi, ok := routemap.SpreadAlong(c, speed, spreadTail)
-		if !ok {
-			return nil, errors.New("--colour pace: the course never moves in its clock")
+func colourBy(cs []*course.Course, name string, o colourOptions, scale float64) (*colouring, error) {
+	// Each metric's values, course by course, and one scale over them all:
+	// on a map of several activities the same colour is the same pace, or
+	// grade, on each.
+	all := func(of func(c *course.Course) []float64) [][]float64 {
+		vs := make([][]float64, len(cs))
+		for k, c := range cs {
+			vs[k] = of(c)
 		}
-		mid := (lo + hi) / 2
-		lo, hi = routemap.Widen(lo, hi, 2*minPaceSpread*mid)
-		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: paceText(lo), high: paceText(hi)}
-		return &colouring{
-			gradients: routemap.Gradients(c, speed, r.scale, scale),
-			legend:    name + ", pace",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by pace, %s (blue) to %s (red)", "coloured", r.low, r.high),
-		}, nil
+		return vs
+	}
+	spread := func(vs [][]float64) (float64, float64, bool) { return routemap.SpreadAlongAll(cs, vs, spreadTail) }
+	byShare := func(lo, hi, share float64) (float64, float64) {
+		return routemap.Widen(lo, hi, 2*share*(lo+hi)/2)
+	}
+	number := func(unit string) func(float64) string {
+		return func(v float64) string { return fmt.Sprintf("%.0f %s", v, unit) }
+	}
+	plain := func(lo, hi float64, text func(float64) string) ramp {
+		return ramp{scale: render.Scale{Min: lo, Max: hi}, low: text(lo), high: text(hi)}
+	}
+
+	var label string
+	var vs [][]float64
+	var r ramp
+	peaks := false
+	switch o.metric {
+	case "pace", "grade-adjusted-pace":
+		label = "pace"
+		of := func(c *course.Course) []float64 { return routemap.Speed(c, paceAround) }
+		if o.metric == "grade-adjusted-pace" {
+			label = "grade-adjusted pace"
+			of = func(c *course.Course) []float64 { return routemap.GradeAdjustedSpeed(c, paceAround) }
+		}
+		vs = all(of)
+		lo, hi, ok := spread(vs)
+		if !ok {
+			return nil, fmt.Errorf("--colour %s: the course never moves in its clock, or has too little elevation", o.metric)
+		}
+		lo, hi = byShare(lo, hi, minPaceSpread)
+		r = plain(lo, hi, paceText)
 	case "elevation":
-		height := routemap.Elevation(c)
-		lo, hi, _ := routemap.SpreadAlong(c, height, spreadTail)
+		label, vs = "elevation", all(routemap.Elevation)
+		lo, hi, _ := spread(vs)
 		lo, hi = routemap.Widen(lo, hi, minElevationSpan)
-		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f m", lo), high: fmt.Sprintf("%.0f m", hi)}
-		return &colouring{
-			gradients: routemap.Gradients(c, height, r.scale, scale),
-			legend:    name + ", elevation",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by elevation, %s (blue) to %s (red)", "coloured", r.low, r.high),
-		}, nil
+		r = plain(lo, hi, number("m"))
 	case "grade":
-		grade := routemap.Grade(c, gradeWindow)
-		lo, hi, ok := routemap.Spread(grade, 0)
+		label = "grade"
+		vs = all(func(c *course.Course) []float64 { return routemap.Grade(c, gradeWindow) })
+		lo, hi, ok := routemap.Spread(slices.Concat(vs...), 0)
 		if !ok {
 			return nil, errors.New("--colour grade: the course has too little elevation to take a slope from")
 		}
@@ -198,89 +218,67 @@ func colourBy(c *course.Course, name string, o colourOptions, scale float64) (*c
 		// past which the ends' colours say "this steep or steeper".
 		steepest := max(math.Abs(lo), math.Abs(hi))
 		reach := min(max(steepest, minGrade), o.gradeCap/100)
-		r := ramp{scale: render.Scale{Min: -reach, Max: reach}, low: gradeText(-reach), high: gradeText(reach)}
+		r = ramp{scale: render.Scale{Min: -reach, Max: reach}, low: gradeText(-reach), high: gradeText(reach)}
 		if steepest > o.gradeCap/100 {
 			r.low, r.high = "≤"+r.low, "≥"+r.high
 		}
-		gs := routemap.Gradients(c, grade, r.scale, scale)
-		for i := range gs {
-			// Each piece of the line by its steepest grade, not its
-			// average: at a whole course's zoom a piece is tens of
-			// metres, and a staircase averaged with the level ground
-			// either side is drawn as a gentle slope.
-			gs[i].Peaks = true
-		}
-		return &colouring{
-			gradients: gs,
-			legend:    name + ", grade",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by grade, %s (blue) to %s (red)", "coloured", r.low, r.high),
-		}, nil
-	case "grade-adjusted-pace":
-		speed := routemap.GradeAdjustedSpeed(c, paceAround)
-		lo, hi, ok := routemap.SpreadAlong(c, speed, spreadTail)
-		if !ok {
-			return nil, errors.New("--colour grade-adjusted-pace: the course has too little elevation, or never moves in its clock")
-		}
-		mid := (lo + hi) / 2
-		lo, hi = routemap.Widen(lo, hi, 2*minPaceSpread*mid)
-		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: paceText(lo), high: paceText(hi)}
-		return &colouring{
-			gradients: routemap.Gradients(c, speed, r.scale, scale),
-			legend:    name + ", grade-adjusted pace",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by grade-adjusted pace, %s (blue) to %s (red)", "coloured", r.low, r.high),
-		}, nil
+		// Each piece of the line by its steepest grade, not its average:
+		// at a whole course's zoom a piece is tens of metres, and a
+		// staircase averaged with the level ground either side is drawn
+		// as a gentle slope.
+		peaks = true
 	case "cadence":
-		raw, unit := routemap.Cadence(c)
-		v := routemap.Around(c, raw, paceAround)
-		lo, hi, _ := routemap.SpreadAlong(c, v, spreadTail)
+		label = "cadence"
+		var unit string
+		for _, c := range cs {
+			_, u := routemap.Cadence(c)
+			if unit != "" && u != unit {
+				return nil, errors.New("--colour cadence: the activities count cadence in different units -- steps a minute and revolutions a minute -- and cannot share a scale")
+			}
+			unit = u
+		}
+		vs = all(func(c *course.Course) []float64 {
+			raw, _ := routemap.Cadence(c)
+			return routemap.Around(c, raw, paceAround)
+		})
+		lo, hi, _ := spread(vs)
 		lo, hi = routemap.Widen(lo, hi, minCadenceSpan)
-		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f %s", lo, unit), high: fmt.Sprintf("%.0f %s", hi, unit)}
-		return &colouring{
-			gradients: routemap.Gradients(c, v, r.scale, scale),
-			legend:    name + ", cadence",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by cadence, %s (blue) to %s (red)", "coloured", r.low, r.high),
-		}, nil
+		r = plain(lo, hi, number(unit))
 	case "air-power":
-		v := routemap.Around(c, routemap.AirPower(c), paceAround)
-		lo, hi, _ := routemap.SpreadAlong(c, v, spreadTail)
+		label = "air power"
+		vs = all(func(c *course.Course) []float64 { return routemap.Around(c, routemap.AirPower(c), paceAround) })
+		lo, hi, _ := spread(vs)
 		lo, hi = routemap.Widen(lo, hi, minAirPowerSpan)
-		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f W", lo), high: fmt.Sprintf("%.0f W", hi)}
-		return &colouring{
-			gradients: routemap.Gradients(c, v, r.scale, scale),
-			legend:    name + ", air power",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by air power, %s (blue) to %s (red)", "coloured", r.low, r.high),
-		}, nil
+		r = plain(lo, hi, number("W"))
 	case "heart-rate":
-		hr := routemap.Around(c, routemap.HeartRate(c), paceAround)
-		lo, hi, _ := routemap.SpreadAlong(c, hr, spreadTail)
+		label = "heart rate"
+		vs = all(func(c *course.Course) []float64 { return routemap.Around(c, routemap.HeartRate(c), paceAround) })
+		lo, hi, _ := spread(vs)
 		lo, hi = routemap.Widen(lo, hi, minHeartRateSpan)
-		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f bpm", lo), high: fmt.Sprintf("%.0f bpm", hi)}
-		return &colouring{
-			gradients: routemap.Gradients(c, hr, r.scale, scale),
-			legend:    name + ", heart rate",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by heart rate, %s (blue) to %s (red)", "coloured", r.low, r.high),
-		}, nil
+		r = plain(lo, hi, number("bpm"))
 	case "power":
 		src := powerSources[o.power]
-		w := routemap.Around(c, routemap.Power(c, src), paceAround)
-		lo, hi, _ := routemap.SpreadAlong(c, w, spreadTail)
-		mid := (lo + hi) / 2
-		lo, hi = routemap.Widen(lo, hi, 2*minPowerSpread*mid)
-		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f W", lo), high: fmt.Sprintf("%.0f W", hi)}
-		sensor := powerSensor(c, src)
-		return &colouring{
-			gradients: routemap.Gradients(c, w, r.scale, scale),
-			legend:    name + ", " + sensor + " power",
-			ramp:      r,
-			report:    fmt.Sprintf("%-10s by %s power, %s (blue) to %s (red)", "coloured", sensor, r.low, r.high),
-		}, nil
+		label = powerSensor(cs, src) + " power"
+		vs = all(func(c *course.Course) []float64 { return routemap.Around(c, routemap.Power(c, src), paceAround) })
+		lo, hi, _ := spread(vs)
+		lo, hi = byShare(lo, hi, minPowerSpread)
+		r = plain(lo, hi, number("W"))
+	default:
+		return nil, fmt.Errorf("--colour %q: colour by %s", o.metric, colourMetrics)
 	}
-	return nil, fmt.Errorf("--colour %q: colour by %s", o.metric, colourMetrics)
+
+	col := &colouring{
+		legend: name + ", " + label,
+		ramp:   r,
+		report: fmt.Sprintf("%-10s by %s, %s (blue) to %s (red)", "coloured", label, r.low, r.high),
+	}
+	for k, c := range cs {
+		for _, g := range routemap.Gradients(c, vs[k], r.scale, scale) {
+			g.Peaks = peaks
+			col.gradients = append(col.gradients, g)
+		}
+	}
+	return col, nil
 }
 
 // powerSensor is which sensor's power src takes on c, in words for the
@@ -288,16 +286,18 @@ func colourBy(c *course.Course, name string, o colourOptions, scale float64) (*c
 // power map that does not say which it is cannot be read against another.
 // auto takes the footpod's wherever it has one, so a course with any footpod
 // power at all is coloured by it.
-func powerSensor(c *course.Course, src fitactivity.PowerSource) string {
+func powerSensor(cs []*course.Course, src fitactivity.PowerSource) string {
 	if src == fitactivity.PowerNative {
 		return "native"
 	}
 	if src == fitactivity.PowerStryd {
 		return "Stryd"
 	}
-	for _, p := range c.Points {
-		if p.HasStrydPower {
-			return "Stryd"
+	for _, c := range cs {
+		for _, p := range c.Points {
+			if p.HasStrydPower {
+				return "Stryd"
+			}
 		}
 	}
 	return "native"
