@@ -33,6 +33,21 @@ const minElevationSpan = 20.0
 // whole ramp spent on a few beats of drift.
 const minHeartRateSpan = 10.0
 
+// minCadenceSpan is the least range of cadence a course is coloured over, in
+// its unit: an even run's few steps a minute of wobble are one colour.
+const minCadenceSpan = 10.0
+
+// minAirPowerSpan is the least range of air power a course is coloured over,
+// in watts: on a still day air power is a few watts that differ by one or
+// two, and the whole ramp over them would colour noise as wind.
+const minAirPowerSpan = 10.0
+
+// anyKnown reports whether any of values is known.
+func anyKnown(values []float64) bool {
+	_, _, ok := routemap.Spread(values, 0)
+	return ok
+}
+
 // minPowerSpread is the least range of power a course is coloured over, as a
 // share of its middle either side, as minPaceSpread is for speed.
 const minPowerSpread = 0.05
@@ -98,6 +113,21 @@ func checkColour(c *course.Course, o colourOptions) error {
 		if _, _, ok := routemap.Spread(routemap.Elevation(c), 0); !ok {
 			return fmt.Errorf("--colour %s: the course records no elevation", o.metric)
 		}
+	case "cadence":
+		if v, _ := routemap.Cadence(c); !anyKnown(v) {
+			return errors.New("--colour cadence: the course records no cadence")
+		}
+	case "air-power":
+		if !anyKnown(routemap.AirPower(c)) {
+			return errors.New("--colour air-power: the course records no air power, which is a Stryd footpod's estimate")
+		}
+	case "grade-adjusted-pace":
+		if !c.Timed {
+			return errors.New("--colour grade-adjusted-pace: the course has no times, so no pace")
+		}
+		if !anyKnown(routemap.Elevation(c)) {
+			return errors.New("--colour grade-adjusted-pace: the course records no elevation, so no grade to adjust for")
+		}
 	case "heart-rate":
 		if _, _, ok := routemap.Spread(routemap.HeartRate(c), 0); !ok {
 			return errors.New("--colour heart-rate: the course records no heart rate")
@@ -133,7 +163,7 @@ func colourBy(c *course.Course, name string, o colourOptions, scale float64) (*c
 	switch o.metric {
 	case "pace":
 		speed := routemap.Speed(c, paceAround)
-		lo, hi, ok := routemap.Spread(speed, spreadTail)
+		lo, hi, ok := routemap.SpreadAlong(c, speed, spreadTail)
 		if !ok {
 			return nil, errors.New("--colour pace: the course never moves in its clock")
 		}
@@ -148,7 +178,7 @@ func colourBy(c *course.Course, name string, o colourOptions, scale float64) (*c
 		}, nil
 	case "elevation":
 		height := routemap.Elevation(c)
-		lo, hi, _ := routemap.Spread(height, spreadTail)
+		lo, hi, _ := routemap.SpreadAlong(c, height, spreadTail)
 		lo, hi = routemap.Widen(lo, hi, minElevationSpan)
 		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f m", lo), high: fmt.Sprintf("%.0f m", hi)}
 		return &colouring{
@@ -186,9 +216,47 @@ func colourBy(c *course.Course, name string, o colourOptions, scale float64) (*c
 			ramp:      r,
 			report:    fmt.Sprintf("%-10s by grade, %s (blue) to %s (red)", "coloured", r.low, r.high),
 		}, nil
+	case "grade-adjusted-pace":
+		speed := routemap.GradeAdjustedSpeed(c, paceAround)
+		lo, hi, ok := routemap.SpreadAlong(c, speed, spreadTail)
+		if !ok {
+			return nil, errors.New("--colour grade-adjusted-pace: the course has too little elevation, or never moves in its clock")
+		}
+		mid := (lo + hi) / 2
+		lo, hi = routemap.Widen(lo, hi, 2*minPaceSpread*mid)
+		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: paceText(lo), high: paceText(hi)}
+		return &colouring{
+			gradients: routemap.Gradients(c, speed, r.scale, scale),
+			legend:    name + ", grade-adjusted pace",
+			ramp:      r,
+			report:    fmt.Sprintf("%-10s by grade-adjusted pace, %s (blue) to %s (red)", "coloured", r.low, r.high),
+		}, nil
+	case "cadence":
+		raw, unit := routemap.Cadence(c)
+		v := routemap.Around(c, raw, paceAround)
+		lo, hi, _ := routemap.SpreadAlong(c, v, spreadTail)
+		lo, hi = routemap.Widen(lo, hi, minCadenceSpan)
+		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f %s", lo, unit), high: fmt.Sprintf("%.0f %s", hi, unit)}
+		return &colouring{
+			gradients: routemap.Gradients(c, v, r.scale, scale),
+			legend:    name + ", cadence",
+			ramp:      r,
+			report:    fmt.Sprintf("%-10s by cadence, %s (blue) to %s (red)", "coloured", r.low, r.high),
+		}, nil
+	case "air-power":
+		v := routemap.Around(c, routemap.AirPower(c), paceAround)
+		lo, hi, _ := routemap.SpreadAlong(c, v, spreadTail)
+		lo, hi = routemap.Widen(lo, hi, minAirPowerSpan)
+		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f W", lo), high: fmt.Sprintf("%.0f W", hi)}
+		return &colouring{
+			gradients: routemap.Gradients(c, v, r.scale, scale),
+			legend:    name + ", air power",
+			ramp:      r,
+			report:    fmt.Sprintf("%-10s by air power, %s (blue) to %s (red)", "coloured", r.low, r.high),
+		}, nil
 	case "heart-rate":
 		hr := routemap.Around(c, routemap.HeartRate(c), paceAround)
-		lo, hi, _ := routemap.Spread(hr, spreadTail)
+		lo, hi, _ := routemap.SpreadAlong(c, hr, spreadTail)
 		lo, hi = routemap.Widen(lo, hi, minHeartRateSpan)
 		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f bpm", lo), high: fmt.Sprintf("%.0f bpm", hi)}
 		return &colouring{
@@ -200,7 +268,7 @@ func colourBy(c *course.Course, name string, o colourOptions, scale float64) (*c
 	case "power":
 		src := powerSources[o.power]
 		w := routemap.Around(c, routemap.Power(c, src), paceAround)
-		lo, hi, _ := routemap.Spread(w, spreadTail)
+		lo, hi, _ := routemap.SpreadAlong(c, w, spreadTail)
 		mid := (lo + hi) / 2
 		lo, hi = routemap.Widen(lo, hi, 2*minPowerSpread*mid)
 		r := ramp{scale: render.Scale{Min: lo, Max: hi}, low: fmt.Sprintf("%.0f W", lo), high: fmt.Sprintf("%.0f W", hi)}
@@ -236,7 +304,7 @@ func powerSensor(c *course.Course, src fitactivity.PowerSource) string {
 }
 
 // colourMetrics are what --colour takes, in words.
-const colourMetrics = "pace, elevation, grade, heart-rate or power"
+const colourMetrics = "pace, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power or cadence"
 
 // gradeWindow is how far either side of a point its grade is taken over, in
 // metres. Narrower than the 30 m videofx and fitdash read a grade over:

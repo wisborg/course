@@ -177,6 +177,7 @@ func TestReadHeartRateAndPower(t *testing.T) {
 	fit := filepath.Join(t.TempDir(), "run.fit")
 	opts := fittest.DefaultOptions()
 	opts.Count, opts.PowerWatts, opts.DeveloperField = 60, 250, fitactivity.StrydPowerField
+	opts.DeveloperFields = []string{fitactivity.StrydAirPowerField}
 	if err := fittest.WriteFile(fit, opts); err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +193,10 @@ func TestReadHeartRateAndPower(t *testing.T) {
 		t.Errorf("power: native %v %v, Stryd %v %v; want 250 and %v", p.HasNativePower, p.NativePower, p.HasStrydPower, p.StrydPower, fittest.DeveloperFieldRaw(10))
 	}
 
+	if !p.HasCadence || p.Cadence < 79 || p.Cadence > 85 || !p.HasAirPower || p.AirPower != float64(fittest.DeveloperFieldRaw(10)) {
+		t.Errorf("cadence %v %v, air power %v %v; want the fixture's 79-85 rpm and %v", p.HasCadence, p.Cadence, p.HasAirPower, p.AirPower, fittest.DeveloperFieldRaw(10))
+	}
+
 	gpx := write(t, "run.gpx", `<gpx><trk><trkseg>
 		<trkpt lat="10" lon="20"><time>2026-04-02T06:00:00Z</time></trkpt>
 		<trkpt lat="10.001" lon="20"><time>2026-04-02T06:00:30Z</time></trkpt>
@@ -199,7 +204,7 @@ func TestReadHeartRateAndPower(t *testing.T) {
 	if c, err = Read(gpx); err != nil {
 		t.Fatal(err)
 	}
-	if p := c.Points[1]; p.HasHeartRate || p.HasNativePower || p.HasStrydPower {
+	if p := c.Points[1]; p.HasHeartRate || p.HasNativePower || p.HasStrydPower || p.HasCadence || p.HasAirPower {
 		t.Errorf("a GPX with no sensors has %+v", p)
 	}
 }

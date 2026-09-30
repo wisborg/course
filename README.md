@@ -68,7 +68,7 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
-### Colouring by pace, elevation, grade, heart rate or power
+### Colouring by a metric along the course
 
 ```
 ./course map run.fit --colour pace
@@ -77,7 +77,13 @@ The system fonts are read on this machine and never copied anywhere.
 ./course map hike.fit --colour grade --grade-cap 30
 ./course map run.fit --colour heart-rate
 ./course map run.fit --colour power --power-source native
+./course map run.fit --colour air-power
+./course map run.fit --colour cadence
+./course map hilly.fit --colour grade-adjusted-pace
 ```
+
+The metrics are `pace`, `grade-adjusted-pace`, `elevation`, `grade`, `heart-rate`, `power`,
+`air-power` and `cadence`.
 
 `--colour` colours the course by a metric along it, from blue at its slowest or lowest to red
 at its fastest or highest, with a colour bar in the legend giving the pace or height at each
@@ -111,6 +117,23 @@ sensors that disagree by a quarter or more -- a footpod such as Stryd, and the w
 `--power-source` picks which, exactly as it does in videofx and fitdash: `auto` (the default)
 the footpod's where there is one and the watch's otherwise, `stryd` or `native` only that
 one. The legend and the report say which sensor the colours are.
+
+`air-power` is a Stryd footpod's estimate of the power spent against the air -- mostly
+headwind, below zero with the wind behind -- so unlike the rest of a run it depends on which
+way the course faces and what shelters it: on a loop run on a windy day one side is red and
+the other blue. `cadence` is steps a minute for running, walking and hiking, where a FIT file
+counts one leg, and revolutions a minute otherwise, as fitdash shows it. Both are averaged
+over 30 m either side, as heart rate and power are.
+
+`grade-adjusted-pace` is the pace as it would be on level ground for the same effort: the pace
+times how much more, or less, running at that grade costs than running on the flat, by the
+energy cost Minetti and others measured on a treadmill (J Appl Physiol, 2002). A climb at 10%
+costs about 1.7 times the flat; a gentle descent costs less, and past about -20% more again.
+Pace and grade are taken over the same 30 m either side.
+
+The ends of every scale but grade's leave out the most extreme 5% of the course's ground --
+by distance, not by points, so a toilet stop of ten minutes recorded a point a second does
+not become the slow end of the pace scale.
 
 Where the file has no value -- no elevation for a stretch, a gap in the recording --
 the course is not coloured, and a course without times or without any elevation is refused

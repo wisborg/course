@@ -101,7 +101,7 @@ func TestMapColour(t *testing.T) {
 		{[]string{"--colour", "elevation", plan}, "no elevation"},
 		{[]string{"--colour", "grade", plan}, "no elevation"},
 		{[]string{"--colour", "grade", oneHeight}, "too little elevation"},
-		{[]string{"--colour", "cadence", run1}, "pace, elevation, grade, heart-rate or power"},
+		{[]string{"--colour", "stride", run1}, "pace, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power or cadence"},
 		{[]string{"--colour", "pace", "--grade-cap", "25", run1}, "--grade-cap is for --colour grade"},
 		{[]string{"--colour", "grade", "--grade-cap", "0", run1}, "more than 0"},
 		{[]string{"--colour", "pace", "--compare", run1, run1}, "use one"},
@@ -425,6 +425,106 @@ func TestMapColourHeartRateAndPower(t *testing.T) {
 		{[]string{"--colour", "power", "--power-source", "stryd", native}, "no stryd power; --power-source auto"},
 		{[]string{"--colour", "power", "--power-source", "strid", both}, `--power-source "strid" is invalid; use auto, stryd, or native`},
 		{[]string{"--colour", "heart-rate", "--power-source", "native", both}, "--power-source is for --colour power"},
+	} {
+		resetNow(mapCmd)
+		_, err := run(t, append([]string{"map", "--store", store, "--out", out}, c.args...)...)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("map %v: %v, want an error saying %q", c.args, err, c.want)
+		}
+	}
+}
+
+// --colour cadence, air-power and grade-adjusted-pace colour a recording by
+// its steps, by the wind a footpod felt, and by its pace as on level ground;
+// each refused on a file without what it needs.
+func TestMapColourCadenceAirPowerAndGradeAdjustedPace(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	stryd, plain, bare := filepath.Join(dir, "stryd.fit"), filepath.Join(dir, "plain.fit"), filepath.Join(dir, "bare.gpx")
+	opts := fittest.DefaultOptions()
+	opts.Count, opts.DeveloperField = 600, fitactivity.StrydPowerField
+	opts.DeveloperFields = []string{fitactivity.StrydAirPowerField}
+	if err := fittest.WriteFile(stryd, opts); err != nil {
+		t.Fatal(err)
+	}
+	opts.DeveloperField, opts.DeveloperFields = "", nil
+	if err := fittest.WriteFile(plain, opts); err != nil {
+		t.Fatal(err)
+	}
+	writeLine(t, bare, 10, 20, 0.0002, 50)
+	// A still day: air power of 1-5 W, which the scale shows over at
+	// least 10 W rather than calling the difference wind.
+	still := filepath.Join(dir, "still.fit")
+	opts.DeveloperField, opts.DeveloperFields, opts.DeveloperFieldScale = fitactivity.StrydAirPowerField, nil, 100
+	if err := fittest.WriteFile(still, opts); err != nil {
+		t.Fatal(err)
+	}
+	plan := filepath.Join(dir, "plan.gpx")
+	writeFile(t, plan, `<gpx><rte><rtept lat="10" lon="20"><ele>5</ele></rtept><rtept lat="10" lon="20.01"><ele>9</ele></rtept></rte></gpx>`)
+	// A metronome's 85 rpm, with no sport: shown over at least 10 either way.
+	even := filepath.Join(dir, "even.gpx")
+	var b strings.Builder
+	b.WriteString(`<gpx xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><trkseg>`)
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><time>%s</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:cad>85</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions></trkpt>`,
+			ftoa6(20+float64(i)*0.0001), stamp(4*i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, even, b.String())
+	// Ten minutes stood still halfway, a fix a second: by points a sixth
+	// of the run, by ground none of it, so the slow end is the running.
+	stop := filepath.Join(dir, "stop.gpx")
+	b.Reset()
+	b.WriteString(`<gpx><trk><trkseg>`)
+	sec := 0
+	for i := 0; i < 400; i++ {
+		fixes := 1
+		if i == 200 {
+			fixes = 600
+		}
+		for range fixes {
+			fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><ele>%.1f</ele><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.00003), 10+float64(i%50)/10, stamp(sec))
+			sec++
+		}
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, stop, b.String())
+	store, out := filepath.Join(dir, "store"), filepath.Join(dir, "map.png")
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--colour", "air-power", still}, "by air power, -2 W (blue) to 8 W (red)"},
+		{[]string{"--colour", "cadence", even}, "by cadence, 80 rpm (blue) to 90 rpm (red)"},
+		{[]string{"--colour", "grade-adjusted-pace", stop}, "by grade-adjusted pace, 6:02/km (blue)"},
+		{[]string{"--colour", "pace", stop}, "by pace, 5:20/km (blue)"},
+		// The fixture runs at 82 rpm ±3, counted one leg: steps a minute
+		// are twice it.
+		{[]string{"--colour", "cadence", plain}, "by cadence, 16"},
+		{[]string{"--colour", "cadence", plain}, " spm (red)"},
+		{[]string{"--colour", "air-power", stryd}, "by air power, "},
+		// 3 m/s up and down the fixture's gentle hills.
+		{[]string{"--colour", "grade-adjusted-pace", plain}, "by grade-adjusted pace, "},
+	} {
+		resetNow(mapCmd)
+		o, err := run(t, append([]string{"map", "--store", store, "--out", out, "--width", "300", "--height", "200"}, c.args...)...)
+		if err != nil || !strings.Contains(o, c.want) {
+			t.Errorf("map %v: %v\n%s\nwant %q", c.args, err, o, c.want)
+		}
+	}
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--colour", "cadence", bare}, "no cadence"},
+		{[]string{"--colour", "air-power", plain}, "no air power"},
+		{[]string{"--colour", "grade-adjusted-pace", bare}, "no elevation"},
+		{[]string{"--colour", "grade-adjusted-pace", plan}, "no times"},
 	} {
 		resetNow(mapCmd)
 		_, err := run(t, append([]string{"map", "--store", store, "--out", out}, c.args...)...)

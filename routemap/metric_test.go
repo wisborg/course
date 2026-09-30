@@ -316,3 +316,107 @@ func TestAround(t *testing.T) {
 		t.Errorf("either side of a gap, %v and %v, want 100 and 300", a[9], a[10])
 	}
 }
+
+// Cadence is doubled into steps a minute for sports where a FIT file counts
+// one leg, and left in revolutions a minute otherwise, an unknown sport
+// included; a recorded 0 is 0 and no reading is not known.
+func TestCadence(t *testing.T) {
+	pts := []course.Point{{HasCadence: true, Cadence: 85}, {HasCadence: true, Cadence: 0}, {}}
+	for sport, want := range map[string]struct {
+		first float64
+		unit  string
+	}{
+		"running": {170, "spm"}, "Walking": {170, "spm"}, "hiking": {170, "spm"},
+		"cycling": {85, "rpm"}, "": {85, "rpm"},
+	} {
+		v, unit := Cadence(&course.Course{Sport: sport, Points: pts})
+		if v[0] != want.first || unit != want.unit || v[1] != 0 || !math.IsNaN(v[2]) {
+			t.Errorf("sport %q: cadence %v %s, want %v %s, then 0, then not known", sport, v, unit, want.first, want.unit)
+		}
+	}
+	a := AirPower(&course.Course{Points: []course.Point{{HasAirPower: true, AirPower: -2}, {}}})
+	if a[0] != -2 || !math.IsNaN(a[1]) {
+		t.Errorf("air power %v, want -2 -- a tailwind -- then not known", a)
+	}
+}
+
+// The energy cost of running on a slope is Minetti's: 3.6 J/kg/m on the
+// flat, about 1.7 times that at +10%, least about -20%, and taken as the
+// end of what was measured past ±45%.
+func TestMinetti(t *testing.T) {
+	if c := minetti(0); c != 3.6 {
+		t.Errorf("on the flat, %v, want 3.6", c)
+	}
+	if r := minetti(0.10) / minetti(0); r < 1.6 || r > 1.8 {
+		t.Errorf("at +10%%, %v times the flat, want about 1.7", r)
+	}
+	if !(minetti(-0.20) < minetti(-0.10)) || !(minetti(-0.20) < minetti(-0.30)) {
+		t.Errorf("descending costs least about -20%%: %v at -10%%, %v at -20%%, %v at -30%%", minetti(-0.10), minetti(-0.20), minetti(-0.30))
+	}
+	if minetti(0.9) != minetti(0.45) || minetti(-0.9) != minetti(-0.45) {
+		t.Error("past ±45% the polynomial is used where nobody measured")
+	}
+}
+
+// Grade-adjusted speed is the speed on level ground, faster up a climb by
+// what the climb costs, and not known where the grade is not.
+func TestGradeAdjustedSpeed(t *testing.T) {
+	flat := eastward(101, every(2*time.Second))
+	for i := range flat.Points {
+		flat.Points[i].HasElevation, flat.Points[i].Elevation = true, 10
+	}
+	if v := GradeAdjustedSpeed(flat, 30)[50]; !sameValue(v, 5) {
+		t.Errorf("on the flat at 5 m/s, %v, want 5", v)
+	}
+	up := hill(func(int) float64 { return 0 }) // 5% up, 3 s a point: 3.33 m/s
+	g := GradeAdjustedSpeed(up, 30)
+	want := 10.0 / 3 * minetti(0.05) / minetti(0)
+	if math.Abs(g[25]-want) > 0.03*want {
+		t.Errorf("up 5%% at 3.33 m/s, %v, want %v", g[25], want)
+	}
+	// Near the top, where the grade changes within the window, the grade
+	// is taken over the same stretch as the speed.
+	if w := Speed(up, 30)[48] * minetti(Grade(up, 30)[48]) / minetti(0); !sameValue(g[48], w) {
+		t.Errorf("near the top, %v, want %v: speed and grade over the same 30 m", g[48], w)
+	}
+	if down := g[75]; down >= 10.0/3 {
+		t.Errorf("down 5%% at 3.33 m/s, %v, want slower: a gentle descent is easier", down)
+	}
+	for i := range up.Points {
+		up.Points[i].HasElevation = false
+	}
+	if v := GradeAdjustedSpeed(up, 30)[25]; !math.IsNaN(v) {
+		t.Errorf("with no elevation, %v, want not known", v)
+	}
+}
+
+// A range counted by ground leaves out a standstill however long it lasted;
+// counted by points, a long enough one sets the slow end.
+func TestSpreadAlong(t *testing.T) {
+	// 100 points 10 m apart at 5 m/s, then 60 more standing still.
+	c := eastward(160, every(2*time.Second))
+	v := make([]float64, 160)
+	for i := range c.Points {
+		v[i] = 5
+		if i >= 100 {
+			c.Points[i].Lon = c.Points[99].Lon
+			v[i] = 0
+		}
+	}
+	if lo, _, _ := Spread(v, 0.05); lo != 0 {
+		t.Fatalf("by points the slow end is %v; the test needs it to be the standstill", lo)
+	}
+	if lo, hi, ok := SpreadAlong(c, v, 0.05); !ok || lo != 5 || hi != 5 {
+		t.Errorf("by ground, %v-%v %v, want 5-5: the standstill covers none", lo, hi, ok)
+	}
+	still := eastward(5, every(time.Second))
+	for i := range still.Points {
+		still.Points[i].Lon = 20
+	}
+	if lo, hi, ok := SpreadAlong(still, []float64{1, 2, 3, 4, 5}, 0); !ok || lo != 1 || hi != 5 {
+		t.Errorf("on a course that never moves, %v-%v %v, want the points' own 1-5", lo, hi, ok)
+	}
+	if _, _, ok := SpreadAlong(still, []float64{math.NaN(), math.NaN(), math.NaN(), math.NaN(), math.NaN()}, 0); ok {
+		t.Error("a range of nothing known")
+	}
+}

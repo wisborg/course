@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/wisborg/fitactivity"
 	"github.com/wisborg/osmbase/render"
@@ -147,6 +148,73 @@ func Power(c *course.Course, src fitactivity.PowerSource) []float64 {
 	return out
 }
 
+// Cadence is each point's cadence in the unit its sport is counted in, and
+// the unit: steps a minute for running, walking and hiking, where a FIT file
+// counts one leg and the number a runner knows is twice it; revolutions a
+// minute otherwise, as recorded. An unknown sport is left in revolutions a
+// minute: the recorded number under its recorded unit cannot be wrong, where
+// a guessed doubling would halve or double somebody's cadence. The same
+// rule as fitdash's cadence readout. NaN where the recording had none; a
+// recorded 0, standing still, is 0.
+func Cadence(c *course.Course) ([]float64, string) {
+	factor, unit := 1.0, "rpm"
+	switch strings.ToLower(c.Sport) {
+	case "running", "walking", "hiking":
+		factor, unit = 2, "spm"
+	}
+	out := make([]float64, len(c.Points))
+	for i, p := range c.Points {
+		out[i] = math.NaN()
+		if p.HasCadence {
+			out[i] = factor * p.Cadence
+		}
+	}
+	return out, unit
+}
+
+// AirPower is each point's air power, in watts -- a footpod's estimate of
+// the power spent against the air, mostly headwind -- and NaN where it had
+// none.
+func AirPower(c *course.Course) []float64 {
+	out := make([]float64, len(c.Points))
+	for i, p := range c.Points {
+		out[i] = math.NaN()
+		if p.HasAirPower {
+			out[i] = p.AirPower
+		}
+	}
+	return out
+}
+
+// GradeAdjustedSpeed is each point's speed as the equivalent on level ground,
+// in metres a second: its Speed times how much more, or less, running at its
+// Grade costs than running on the flat, by the energy cost of running on
+// slopes that Minetti and others measured on a treadmill (J Appl Physiol,
+// 2002). A climb at 10% costs about 1.7 times the flat, so running it at
+// 4 m/s is as hard as 6.8 m/s on the flat; a gentle descent costs less, and
+// past about -20% more again, as the legs brake.
+//
+// Speed and grade are taken over the same around metres either side, so
+// they are of one stretch of ground. Where either is not known, neither is
+// this.
+func GradeAdjustedSpeed(c *course.Course, around float64) []float64 {
+	speed, grade := Speed(c, around), Grade(c, around)
+	out := make([]float64, len(speed))
+	for i := range out {
+		out[i] = speed[i] * minetti(grade[i]) / minetti(0)
+	}
+	return out
+}
+
+// minetti is the energy cost of running at grade g, in joules a kilogram a
+// metre, by Minetti et al.'s fifth-order fit to their measurements, which
+// went from -45% to +45%; a grade beyond is taken as the end it passed,
+// rather than trusting a polynomial where nobody measured.
+func minetti(g float64) float64 {
+	g = math.Max(-0.45, math.Min(0.45, g))
+	return 155.4*math.Pow(g, 5) - 30.4*math.Pow(g, 4) - 43.3*math.Pow(g, 3) + 46.3*g*g + 19.5*g + 3.6
+}
+
 // Around is each point's value averaged over the stretch around metres
 // either side of it, within the recorded stretch it is in: a power meter
 // reads a new number every second, and a map coloured by each is a line of
@@ -207,6 +275,48 @@ func Spread(values []float64, tail float64) (lo, hi float64, ok bool) {
 	}
 	sort.Float64s(known)
 	at := func(q float64) float64 { return known[int(math.Round(q*float64(len(known)-1)))] }
+	return at(tail), at(1 - tail), true
+}
+
+// SpreadAlong is Spread with each value counted for the ground its point
+// covers -- half the way to each neighbour -- rather than once a point: the
+// range worth telling apart on a map, which shows ground. A watch records a
+// point a second, so counted by points a toilet stop of six minutes standing
+// still is 360 votes for the slowest pace there is, and on a half marathon
+// with two stops that is past the 5% left out, and the scale's slow end
+// becomes a standstill. Counted by ground it is none. Where the course never
+// moves, it is Spread.
+func SpreadAlong(c *course.Course, values []float64, tail float64) (lo, hi float64, ok bool) {
+	along := c.Along()
+	type weighed struct{ v, w float64 }
+	var known []weighed
+	var total float64
+	for i, v := range values {
+		if math.IsNaN(v) {
+			continue
+		}
+		a, b := max(i-1, 0), min(i+1, len(values)-1)
+		w := (along[b] - along[a]) / 2
+		known = append(known, weighed{v, w})
+		total += w
+	}
+	if len(known) == 0 {
+		return 0, 0, false
+	}
+	if !(total > 0) {
+		return Spread(values, tail)
+	}
+	sort.Slice(known, func(i, j int) bool { return known[i].v < known[j].v })
+	at := func(q float64) float64 {
+		var sum float64
+		for _, k := range known {
+			sum += k.w
+			if sum >= q*total {
+				return k.v
+			}
+		}
+		return known[len(known)-1].v
+	}
 	return at(tail), at(1 - tail), true
 }
 

@@ -74,6 +74,17 @@ type Point struct {
 	NativePower    float64
 	HasStrydPower  bool
 	StrydPower     float64
+
+	// HasCadence reports whether the recording had a cadence here, as the
+	// file has it: revolutions a minute, which for running is one leg's
+	// steps -- half the steps a minute a runner knows.
+	HasCadence bool
+	Cadence    float64
+
+	// HasAirPower reports whether a footpod estimated the power spent
+	// against the air here, in watts: part of StrydPower, mostly headwind.
+	HasAirPower bool
+	AirPower    float64
 }
 
 // Power is the power at the point from src, in watts, and whether there is
@@ -133,9 +144,14 @@ func fromTrack(t *fitactivity.Track) *Course {
 			HasElevation: s.HasElevation, Elevation: s.Elevation,
 			HasHeartRate: s.HasHeartRate, HeartRate: float64(s.HeartRate),
 			HasNativePower: s.HasPower, NativePower: float64(s.Power),
+			HasCadence: s.HasCadence, Cadence: float64(s.Cadence),
 		}, at: s.Time, timed: true})
+		p := &fixes[len(fixes)-1].Point
 		if w, ok := s.DevFields[fitactivity.StrydPowerField]; ok {
-			fixes[len(fixes)-1].HasStrydPower, fixes[len(fixes)-1].StrydPower = true, w
+			p.HasStrydPower, p.StrydPower = true, w
+		}
+		if w, ok := s.DevFields[fitactivity.StrydAirPowerField]; ok {
+			p.HasAirPower, p.AirPower = true, w
 		}
 	}
 	c.Points, c.Dropped = keepPlausible(fixes)
