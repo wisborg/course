@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/wisborg/fitactivity"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course"
@@ -75,6 +76,45 @@ func Elevation(c *course.Course) []float64 {
 		out[i] = math.NaN()
 		if p.HasElevation {
 			out[i] = p.Elevation
+		}
+	}
+	return out
+}
+
+// Grade is the slope at each point, as a fraction -- 0.061 climbing 6.1%,
+// negative descending -- over window metres either side, from fitactivity's
+// elevation model: the elevation smoothed first, tuned to the device's own
+// ascent and descent where the file has them, as videofx and fitdash tune
+// it. A barometer or a GPS altitude wanders by metres, and a slope taken
+// from it raw is a saw-tooth of climbs and drops that were never there.
+//
+// A point with no elevation of its own has no grade -- NaN, not flat -- even
+// though the model would interpolate one across it; so does every point of a
+// course with too little elevation to model.
+func Grade(c *course.Course, window float64) []float64 {
+	out := make([]float64, len(c.Points))
+	for i := range out {
+		out[i] = math.NaN()
+	}
+	along := c.Along()
+	t := &fitactivity.Track{}
+	for i, p := range c.Points {
+		t.Samples = append(t.Samples, fitactivity.Sample{
+			HasDistance: true, Distance: along[i],
+			HasElevation: p.HasElevation, Elevation: p.Elevation,
+		})
+	}
+	var opts fitactivity.ElevationOptions
+	if c.HasElevationTotals {
+		opts.TargetGain, opts.TargetLoss = c.TotalAscent, c.TotalDescent
+	}
+	m := fitactivity.BuildElevationModel(t, opts)
+	if m.Empty() {
+		return out
+	}
+	for i, p := range c.Points {
+		if p.HasElevation {
+			out[i] = m.GradeAtDistance(along[i], window)
 		}
 	}
 	return out

@@ -114,6 +114,9 @@ func TestRead(t *testing.T) {
 	if !c.Timed || last.Elapsed != 59*time.Second || !last.HasDistance || last.Distance <= 0 {
 		t.Errorf("FIT course: timed %v, last point %+v", c.Timed, last)
 	}
+	if !c.HasElevationTotals || c.TotalAscent != float64(opts.TotalAscent) || c.TotalDescent != float64(opts.TotalDescent) {
+		t.Errorf("FIT course: device totals %v %v/%v, want %v/%v", c.HasElevationTotals, c.TotalAscent, c.TotalDescent, opts.TotalAscent, opts.TotalDescent)
+	}
 
 	gpx := write(t, "run.gpx", `<gpx><trk><trkseg>
 		<trkpt lat="10" lon="20"><time>2026-04-02T06:00:00Z</time></trkpt>
@@ -122,7 +125,7 @@ func TestRead(t *testing.T) {
 	if c, err = Read(gpx); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Timed || c.Points[1].Elapsed != 30*time.Second || c.Points[1].HasDistance {
+	if !c.Timed || c.Points[1].Elapsed != 30*time.Second || c.Points[1].HasDistance || c.HasElevationTotals {
 		t.Errorf("GPX course: timed %v, %+v; want 30 s in and no distance", c.Timed, c.Points[1])
 	}
 

@@ -94,7 +94,8 @@ func TestMapColour(t *testing.T) {
 	}{
 		{[]string{"--colour", "pace", plan}, "no times"},
 		{[]string{"--colour", "elevation", plan}, "no elevation"},
-		{[]string{"--colour", "power", run1}, "pace or elevation"},
+		{[]string{"--colour", "grade", plan}, "no elevation"},
+		{[]string{"--colour", "power", run1}, "pace, elevation or grade"},
 		{[]string{"--colour", "pace", "--compare", run1, run1}, "use one"},
 	} {
 		resetNow(mapCmd)
@@ -183,11 +184,73 @@ func TestMapColourOfAnEvenFlatRun(t *testing.T) {
 		// 21.9 m in 5 s, 3:48/km: 5% of the speed either side is 4:00
 		// and 3:37.
 		"pace": "4:00/km (blue) to 3:37/km (red)",
+		// Level ground: the grade scale still reaches 3% either way.
+		"grade": "-3.0% (blue) to +3.0% (red)",
 	} {
 		resetNow(mapCmd)
 		o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "300", "--height", "200", "--colour", metric, run1)
 		if err != nil || !strings.Contains(o, want) {
 			t.Errorf("--colour %s of an even, flat run: %v\n%s\nwant %q", metric, err, o, want)
 		}
+	}
+}
+
+// --colour grade colours a descent blue and the gentler climb before it on
+// the warm side, on a scale with level ground in its middle reaching as far
+// as the steeper of the two either way, and writes the ends as videofx
+// writes a grade.
+func TestMapColourGrade(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	run1, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "run.png")
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 100; i++ {
+		// 22 m a point: up 1 m a point for two thirds, a 4.5% climb, then
+		// down 2 m a point, 9%.
+		ele := min(i, 66-2*(i-66))
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><ele>%d</ele><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.0002), ele, stamp(5*i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, run1, b.String())
+
+	o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "600", "--height", "400", "--colour", "grade", run1)
+	if err != nil {
+		t.Fatalf("--colour grade: %v\n%s", err, o)
+	}
+	// The descent's 9%, a little less once smoothed.
+	if !strings.Contains(o, "by grade, -8.") || !strings.Contains(o, "(blue) to +8.") {
+		t.Errorf("--colour grade reports:\n%s\nwant about -8.5%% to +8.5%%", o)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := func(c [3]uint8, x0, x1 int) bool {
+		for y := 100; y < 400; y++ {
+			for x := x0; x < x1; x++ {
+				r, g, bl, _ := img.At(x, y).RGBA()
+				if near(r>>8, uint32(c[0])) && near(g>>8, uint32(c[1])) && near(bl>>8, uint32(c[2])) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	lo, hi := render.DefaultColours[0], render.DefaultColours[len(render.DefaultColours)-1]
+	blue, red := [3]uint8{lo.R, lo.G, lo.B}, [3]uint8{hi.R, hi.G, hi.B}
+	if has(blue, 50, 350) || has(red, 50, 350) {
+		t.Error("the climb, in the west, is at an end of the scale; want it halfway up the warm side")
+	}
+	if !has(blue, 440, 550) || has(red, 440, 550) {
+		t.Error("the descent, in the east, is not blue")
 	}
 }

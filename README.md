@@ -68,11 +68,12 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
-### Colouring by pace or elevation
+### Colouring by pace, elevation or grade
 
 ```
 ./course map run.fit --colour pace
 ./course map ride.fit --colour elevation
+./course map walk.fit --colour grade
 ```
 
 `--colour` colours the course by a metric along it, from blue at its slowest or lowest to red
@@ -81,7 +82,18 @@ end. The ends are set by the course itself, with the few most extreme values at 
 out, so a sprint finish or a standstill does not squeeze the rest into one colour; an even
 run or a flat course is shown over at least 5% of its speed either side, or 20 m of height,
 rather than spreading the whole ramp over noise. Pace is taken over 30 m either side of each
-point. Where the file has no value -- no elevation for a stretch, a gap in the recording --
+point.
+
+`grade` is the slope: red climbing, blue descending, green level, on a scale with level
+ground in its middle that reaches as far as the steepest of the course either way, and at
+least 3%. It is taken over 30 m either side of each point from the elevation smoothed by
+[fitactivity](https://github.com/wisborg/fitactivity) -- tuned to the device's own total
+ascent and descent where the file has them -- exactly as videofx and fitdash take it, so
+the three agree on the slope at any place in a file. A raw altimeter or GPS altitude wanders
+by metres, and a slope taken from it unsmoothed is a saw-tooth of climbs that were never
+there.
+
+Where the file has no value -- no elevation for a stretch, a gap in the recording --
 the course is not coloured, and a course without times or without any elevation is refused
 rather than drawn in one colour.
 

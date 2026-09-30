@@ -43,12 +43,12 @@ func checkColour(c *course.Course, metric, compareWith string) error {
 		if !c.Timed {
 			return errors.New("--colour pace: the course has no times, so no pace")
 		}
-	case "elevation":
+	case "elevation", "grade":
 		if _, _, ok := routemap.Spread(routemap.Elevation(c), 0); !ok {
-			return errors.New("--colour elevation: the course records no elevation")
+			return fmt.Errorf("--colour %s: the course records no elevation", metric)
 		}
 	default:
-		return fmt.Errorf("--colour %q: colour by pace or elevation", metric)
+		return fmt.Errorf("--colour %q: colour by %s", metric, colourMetrics)
 	}
 	if compareWith != "" {
 		return errors.New("--colour and --compare both colour the course; use one")
@@ -87,9 +87,42 @@ func colourBy(c *course.Course, name, metric string, scale float64) (*colouring,
 			ramp:      r,
 			report:    fmt.Sprintf("%-10s by elevation, %s (blue) to %s (red)", "coloured", r.low, r.high),
 		}, nil
+	case "grade":
+		grade := routemap.Grade(c, gradeWindow)
+		lo, hi, ok := routemap.Spread(grade, spreadTail)
+		if !ok {
+			return nil, errors.New("--colour grade: the course has too little elevation to take a slope from")
+		}
+		// Level in the middle of the scale, whatever the course: a climb
+		// is red and a descent blue on every map, and a course that only
+		// climbs is not coloured blue for its gentlest climb.
+		m := max(math.Abs(lo), math.Abs(hi), minGrade)
+		r := ramp{scale: render.Scale{Min: -m, Max: m}, low: gradeText(-m), high: gradeText(m)}
+		return &colouring{
+			gradients: routemap.Gradients(c, grade, r.scale, scale),
+			legend:    name + ", grade",
+			ramp:      r,
+			report:    fmt.Sprintf("%-10s by grade, %s (blue) to %s (red)", "coloured", r.low, r.high),
+		}, nil
 	}
-	return nil, fmt.Errorf("--colour %q: colour by pace or elevation", metric)
+	return nil, fmt.Errorf("--colour %q: colour by %s", metric, colourMetrics)
 }
+
+// colourMetrics are what --colour takes, in words.
+const colourMetrics = "pace, elevation or grade"
+
+// gradeWindow is how far either side of a point its grade is taken over, in
+// metres: videofx's and fitdash's own, so the three give one slope for one
+// place in one file.
+const gradeWindow = 30.0
+
+// minGrade is the least slope the grade scale reaches either way: on a
+// course with nothing steeper than 1%, the ends of the ramp are not spent on
+// what is, to a runner, level ground.
+const minGrade = 0.03
+
+// gradeText is a grade the way videofx writes one: a signed percentage.
+func gradeText(g float64) string { return fmt.Sprintf("%+.1f%%", 100*g) }
 
 // paceText is a speed as a pace, the way videofx writes one: minutes and
 // seconds a kilometre.

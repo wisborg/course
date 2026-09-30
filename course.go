@@ -37,6 +37,12 @@ type Course struct {
 	Points []Point
 	// Dropped is how many fixes were left out as rogue.
 	Dropped int
+	// TotalAscent and TotalDescent are the recording device's own totals
+	// of climb and descent, in metres, when HasElevationTotals: a far
+	// better guide to how much a noisy elevation trace should be smoothed
+	// than anything worked out from the trace itself.
+	HasElevationTotals        bool
+	TotalAscent, TotalDescent float64
 }
 
 // Point is one position on a course.
@@ -84,7 +90,8 @@ func Read(paths ...string) (*Course, error) {
 }
 
 func fromTrack(t *fitactivity.Track) *Course {
-	c := &Course{Sources: t.Sources, Sport: t.Sport, Timed: true}
+	c := &Course{Sources: t.Sources, Sport: t.Sport, Timed: true,
+		HasElevationTotals: t.HasElevationTotals, TotalAscent: t.TotalAscent, TotalDescent: t.TotalDescent}
 	timer := fitactivity.BuildTimerModel(t)
 	c.Start, _ = timer.Window()
 	var fixes []fix

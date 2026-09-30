@@ -161,3 +161,79 @@ func TestGradients(t *testing.T) {
 		t.Errorf("the second gradient is %d points, values from %v, width %v", len(g.Points), g.Values[0], g.Width)
 	}
 }
+
+// hill is a course east along 10°N, a point every 10 m: up 5% for 500 m,
+// then down 5%, with wander(i) metres of altimeter error at each point.
+func hill(wander func(i int) float64) *course.Course {
+	c := eastward(101, every(3*time.Second))
+	for i := range c.Points {
+		x := float64(10 * i)
+		h := 0.05 * x
+		if x > 500 {
+			h = 0.05 * (1000 - x)
+		}
+		c.Points[i].HasElevation, c.Points[i].Elevation = true, 100+h+wander(i)
+	}
+	return c
+}
+
+// The grade is the slope, climbing positive and descending negative,
+// through altimeter noise that taken raw would read as ±20% from one point
+// to the next.
+func TestGrade(t *testing.T) {
+	c := hill(func(i int) float64 { return float64(i%2)*2 - 1 })
+	g := Grade(c, 30)
+	if math.Abs(g[25]-0.05) > 0.01 || math.Abs(g[75]+0.05) > 0.01 {
+		t.Errorf("grade a quarter of the way %v and three quarters %v, want +0.05 and -0.05", g[25], g[75])
+	}
+
+	// Over 200 m either side, the grade 400 m up the climb takes in the
+	// top of the hill and the start of the descent, and reads gentler.
+	if wide := Grade(c, 200); wide[40] > g[40]-0.01 {
+		t.Errorf("400 m along, %v over 200 m either side and %v over 30; want the wider window gentler", wide[40], g[40])
+	}
+
+	c.Points[40].HasElevation = false
+	if g := Grade(c, 30); !math.IsNaN(g[40]) || math.IsNaN(g[41]) {
+		t.Errorf("grade %v at a point with no elevation and %v beside it; want not known, then known", g[40], g[41])
+	}
+	for i := range c.Points {
+		c.Points[i].HasElevation = false
+	}
+	for i, v := range Grade(c, 30) {
+		if !math.IsNaN(v) {
+			t.Fatalf("with no elevation at all, grade %v at %d, want not known", v, i)
+		}
+	}
+	// One point with an elevation is too little to take a slope from: not
+	// known there either, rather than level.
+	c.Points[10].HasElevation = true
+	if v := Grade(c, 30)[10]; !math.IsNaN(v) {
+		t.Errorf("with one elevation in the course, grade %v there, want not known", v)
+	}
+}
+
+// The smoothing is tuned to the device's own ascent and descent where the
+// file has them: a flat course whose altimeter drifts in long swells reads
+// as rolling ground on the default smoothing, and as the flat ground the
+// device's totals say it was when they are given.
+func TestGradeIsSmoothedToTheDevicesTotals(t *testing.T) {
+	c := eastward(201, every(3*time.Second))
+	for i := range c.Points {
+		c.Points[i].HasElevation, c.Points[i].Elevation = true, 50+3*math.Sin(2*math.Pi*float64(i)/40)
+	}
+	steepest := func(g []float64) float64 {
+		m := 0.0
+		for _, v := range g {
+			m = math.Max(m, math.Abs(v))
+		}
+		return m
+	}
+	if m := steepest(Grade(c, 30)); m < 0.02 {
+		t.Fatalf("the swells read %v at their steepest untuned; the test needs them visible", m)
+	}
+	c.HasElevationTotals, c.TotalAscent, c.TotalDescent = true, 1, 1
+	if m := steepest(Grade(c, 30)); m > 0.01 {
+		t.Errorf("tuned to a device that climbed 1 m, the steepest grade is %v, want under 1%%", m)
+	}
+}
