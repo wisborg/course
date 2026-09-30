@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wisborg/fitactivity"
+	"github.com/wisborg/fitactivity/fittest"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course/routemap"
@@ -99,7 +101,7 @@ func TestMapColour(t *testing.T) {
 		{[]string{"--colour", "elevation", plan}, "no elevation"},
 		{[]string{"--colour", "grade", plan}, "no elevation"},
 		{[]string{"--colour", "grade", oneHeight}, "too little elevation"},
-		{[]string{"--colour", "power", run1}, "pace, elevation or grade"},
+		{[]string{"--colour", "cadence", run1}, "pace, elevation, grade, heart-rate or power"},
 		{[]string{"--colour", "pace", "--grade-cap", "25", run1}, "--grade-cap is for --colour grade"},
 		{[]string{"--colour", "grade", "--grade-cap", "0", run1}, "more than 0"},
 		{[]string{"--colour", "pace", "--compare", run1, run1}, "use one"},
@@ -358,4 +360,76 @@ func hasColour(img image.Image, c [3]uint8, x0, x1, y0, y1 int) bool {
 		}
 	}
 	return false
+}
+
+// --colour heart-rate and --colour power colour a recording by its own
+// readings; power by the sensor --power-source picks, the same three ways as
+// videofx and fitdash, and says which in the report. Asking for a sensor or
+// a metric the file does not have, a --power-source that is not one, or one
+// without --colour power, is refused before anything is drawn.
+func TestMapColourHeartRateAndPower(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	both, native, bare := filepath.Join(dir, "both.fit"), filepath.Join(dir, "native.fit"), filepath.Join(dir, "bare.gpx")
+	opts := fittest.DefaultOptions()
+	opts.Count, opts.PowerWatts, opts.DeveloperField = 600, 250, fitactivity.StrydPowerField
+	if err := fittest.WriteFile(both, opts); err != nil {
+		t.Fatal(err)
+	}
+	opts.DeveloperField = ""
+	if err := fittest.WriteFile(native, opts); err != nil {
+		t.Fatal(err)
+	}
+	writeLine(t, bare, 10, 20, 0.0002, 50)
+	jumpy := filepath.Join(dir, "jumpy.gpx")
+	var b strings.Builder
+	b.WriteString(`<gpx xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><trkseg>`)
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><time>%s</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>%d</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>`,
+			ftoa6(20+float64(i)*0.00003), stamp(i), 130+20*(i%2))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, jumpy, b.String())
+	store, out := filepath.Join(dir, "store"), filepath.Join(dir, "map.png")
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--colour", "heart-rate", both}, "by heart rate, 139 bpm (blue) to 149 bpm (red)"},
+		{[]string{"--colour", "power", both}, "by Stryd power, "},
+		{[]string{"--colour", "power", "--power-source", "stryd", both}, "by Stryd power, "},
+		// 250 W throughout, shown over 5% either side.
+		{[]string{"--colour", "power", "--power-source", "native", both}, "by native power, 238 W (blue) to 262 W (red)"},
+		{[]string{"--colour", "power", native}, "by native power, 238 W"},
+		// An optical sensor's second-to-second jumps between 130 and 150
+		// are averaged out: the run was at 140 throughout.
+		{[]string{"--colour", "heart-rate", jumpy}, "by heart rate, 135 bpm (blue) to 145 bpm (red)"},
+	} {
+		resetNow(mapCmd)
+		o, err := run(t, append([]string{"map", "--store", store, "--out", out, "--width", "300", "--height", "200"}, c.args...)...)
+		if err != nil || !strings.Contains(o, c.want) {
+			t.Errorf("map %v: %v\n%s\nwant %q", c.args, err, o, c.want)
+		}
+	}
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--colour", "heart-rate", bare}, "no heart rate"},
+		{[]string{"--colour", "power", bare}, "no power"},
+		{[]string{"--colour", "power", "--power-source", "stryd", native}, "no stryd power; --power-source auto"},
+		{[]string{"--colour", "power", "--power-source", "strid", both}, `--power-source "strid" is invalid; use auto, stryd, or native`},
+		{[]string{"--colour", "heart-rate", "--power-source", "native", both}, "--power-source is for --colour power"},
+	} {
+		resetNow(mapCmd)
+		_, err := run(t, append([]string{"map", "--store", store, "--out", out}, c.args...)...)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("map %v: %v, want an error saying %q", c.args, err, c.want)
+		}
+	}
 }

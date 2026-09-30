@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wisborg/fitactivity"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course"
@@ -235,5 +236,83 @@ func TestGradeIsSmoothedToTheDevicesTotals(t *testing.T) {
 	c.HasElevationTotals, c.TotalAscent, c.TotalDescent = true, 1, 1
 	if m := steepest(Grade(c, 30)); m > 0.01 {
 		t.Errorf("tuned to a device that climbed 1 m, the steepest grade is %v, want under 1%%", m)
+	}
+}
+
+// Heart rate and power are the recording's, NaN where it had none; power
+// by the source asked for; and a recorded 0 W is 0, not missing.
+func TestHeartRateAndPower(t *testing.T) {
+	c := &course.Course{Timed: true, Points: []course.Point{
+		{HasHeartRate: true, HeartRate: 140, HasNativePower: true, NativePower: 300, HasStrydPower: true, StrydPower: 240},
+		{HasNativePower: true, NativePower: 0},
+		{},
+	}}
+	hr := HeartRate(c)
+	for i, want := range []float64{140, math.NaN(), math.NaN()} {
+		if !sameValue(hr[i], want) {
+			t.Errorf("heart rate %d is %v, want %v", i, hr[i], want)
+		}
+	}
+	for src, want := range map[fitactivity.PowerSource][]float64{
+		fitactivity.PowerAuto:   {240, 0, math.NaN()},
+		fitactivity.PowerNative: {300, 0, math.NaN()},
+		fitactivity.PowerStryd:  {240, math.NaN(), math.NaN()},
+	} {
+		got := Power(c, src)
+		for i := range want {
+			if !sameValue(got[i], want[i]) {
+				t.Errorf("%v power %d is %v, want %v", src, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// A value averaged around a point counts each reading for as long as it was
+// held, leaves out unknown ones, and does not reach across a gap.
+func TestAround(t *testing.T) {
+	// 10 m and a second a point, but 9 seconds held at point 5.
+	c := eastward(11, func(i int) time.Duration {
+		if i == 6 {
+			return 9 * time.Second
+		}
+		return time.Second
+	})
+	v := make([]float64, 11)
+	for i := range v {
+		v[i] = 100
+	}
+	v[5] = 200
+	v[7] = math.NaN()
+	got := Around(c, v, 15) // points 4-6 around 5
+	// 100 for 1 s, 200 for 9 s, 100 for 1 s.
+	if want := (100 + 9*200 + 100) / 11.0; !sameValue(got[5], want) {
+		t.Errorf("around point 5, %v, want %v: the reading held 9 s counts 9 times", got[5], want)
+	}
+	if !sameValue(got[8], 100) {
+		t.Errorf("around point 8, %v, want 100 with the unknown one left out", got[8])
+	}
+	all := make([]float64, 11)
+	for i := range all {
+		all[i] = math.NaN()
+	}
+	if v := Around(c, all, 15)[5]; !math.IsNaN(v) {
+		t.Errorf("with nothing known, %v, want not known", v)
+	}
+
+	// Across a gap, the other side's values are not taken in.
+	g := eastward(20, every(time.Second))
+	for i := 10; i < len(g.Points); i++ {
+		g.Points[i].Lon += 1000.0 / 109_600
+		g.Points[i].Elapsed += 10 * time.Minute
+	}
+	w := make([]float64, 20)
+	for i := range w {
+		w[i] = 100
+		if i >= 10 {
+			w[i] = 300
+		}
+	}
+	if a := Around(g, w, 50); !sameValue(a[9], 100) || !sameValue(a[10], 300) {
+		t.Errorf("either side of a gap, %v and %v, want 100 and 300", a[9], a[10])
 	}
 }

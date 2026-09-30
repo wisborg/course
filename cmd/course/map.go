@@ -43,6 +43,7 @@ var mapOpts struct {
 	compare       string
 	colour        string
 	gradeCap      float64
+	power         string
 }
 
 var mapCmd = &cobra.Command{
@@ -83,7 +84,8 @@ func init() {
 	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
-	f.StringVar(&mapOpts.colour, "colour", "", "colour the course by a metric along it: pace, elevation or grade (the slope)")
+	f.StringVar(&mapOpts.colour, "colour", "", "colour the course by a metric along it: pace, elevation, grade (the slope), heart-rate or power")
+	f.StringVar(&mapOpts.power, "power-source", "auto", "with --colour power, which power reading when the file carries both a footpod's (Stryd) developer field and the standard FIT power field -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; the two can disagree, being different sensors")
 	f.Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
 	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
 	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
@@ -110,7 +112,12 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if len(c.Points) == 0 {
 		return errors.New("the course has no positions to draw")
 	}
-	if err := checkColour(c, mapOpts.colour, mapOpts.compare, cmd.Flags().Changed("grade-cap"), mapOpts.gradeCap); err != nil {
+	colours := colourOptions{
+		metric: mapOpts.colour, compare: mapOpts.compare,
+		gradeCap: mapOpts.gradeCap, gradeCapGiven: cmd.Flags().Changed("grade-cap"),
+		power: mapOpts.power, powerGiven: cmd.Flags().Changed("power-source"),
+	}
+	if err := checkColour(c, colours); err != nil {
 		return err
 	}
 	out := mapOpts.out
@@ -157,7 +164,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	case mapOpts.compare != "":
 		col, err = compareWith(c, nameOf(args[0]), mapOpts.compare, scale)
 	case mapOpts.colour != "":
-		col, err = colourBy(c, nameOf(args[0]), mapOpts.colour, mapOpts.gradeCap/100, scale)
+		col, err = colourBy(c, nameOf(args[0]), colours, scale)
 	}
 	if err != nil {
 		return err

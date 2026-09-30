@@ -60,6 +60,33 @@ type Point struct {
 
 	HasElevation bool
 	Elevation    float64
+
+	// HasHeartRate reports whether the recording had a heart rate here, in
+	// beats a minute.
+	HasHeartRate bool
+	HeartRate    float64
+
+	// A recording can carry two power readings from two sensors, which
+	// disagree: the standard FIT power field (Native), and a footpod's
+	// developer field (Stryd). Both are kept; which one is meant is the
+	// caller's to say, through Power.
+	HasNativePower bool
+	NativePower    float64
+	HasStrydPower  bool
+	StrydPower     float64
+}
+
+// Power is the power at the point from src, in watts, and whether there is
+// one: fitactivity's own rule for choosing between the two sensors -- auto
+// prefers the footpod and falls back to the standard field, and the forced
+// sources never substitute the other -- so course, videofx and fitdash pick
+// the same reading from the same file.
+func (p Point) Power(src fitactivity.PowerSource) (float64, bool) {
+	s := fitactivity.Sample{HasPower: p.HasNativePower, Power: uint16(p.NativePower)}
+	if p.HasStrydPower {
+		s.DevFields = map[string]float64{fitactivity.StrydPowerField: p.StrydPower}
+	}
+	return s.ResolvedPower(src)
 }
 
 // Read reads the course in the files at paths, several of which are merged as
@@ -104,7 +131,12 @@ func fromTrack(t *fitactivity.Track) *Course {
 			Elapsed:     timer.Elapsed(s.Time),
 			HasDistance: s.HasDistance, Distance: s.Distance,
 			HasElevation: s.HasElevation, Elevation: s.Elevation,
+			HasHeartRate: s.HasHeartRate, HeartRate: float64(s.HeartRate),
+			HasNativePower: s.HasPower, NativePower: float64(s.Power),
 		}, at: s.Time, timed: true})
+		if w, ok := s.DevFields[fitactivity.StrydPowerField]; ok {
+			fixes[len(fixes)-1].HasStrydPower, fixes[len(fixes)-1].StrydPower = true, w
+		}
 	}
 	c.Points, c.Dropped = keepPlausible(fixes)
 	return c

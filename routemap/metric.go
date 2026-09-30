@@ -120,6 +120,77 @@ func Grade(c *course.Course, window float64) []float64 {
 	return out
 }
 
+// HeartRate is each point's heart rate, in beats a minute, and NaN where
+// the recording had none.
+func HeartRate(c *course.Course) []float64 {
+	out := make([]float64, len(c.Points))
+	for i, p := range c.Points {
+		out[i] = math.NaN()
+		if p.HasHeartRate {
+			out[i] = p.HeartRate
+		}
+	}
+	return out
+}
+
+// Power is each point's power from src, in watts, by fitactivity's rule for
+// choosing between the two sensors a recording can carry, and NaN where src
+// has none. A recorded 0 -- standing at a crossing -- is 0, not absent.
+func Power(c *course.Course, src fitactivity.PowerSource) []float64 {
+	out := make([]float64, len(c.Points))
+	for i, p := range c.Points {
+		out[i] = math.NaN()
+		if w, ok := p.Power(src); ok {
+			out[i] = w
+		}
+	}
+	return out
+}
+
+// Around is each point's value averaged over the stretch around metres
+// either side of it, within the recorded stretch it is in: a power meter
+// reads a new number every second, and a map coloured by each is a line of
+// flecks. The average is by time, as a watch's own 10-second power is --
+// each value counts for as long as it was held, so a standstill counts for
+// how long it lasted, not for the one fix it took. Unknown values are left
+// out of it, and a point with none known around it is NaN.
+func Around(c *course.Course, values []float64, around float64) []float64 {
+	out := make([]float64, len(values))
+	for i := range out {
+		out[i] = math.NaN()
+	}
+	along := c.Along()
+	for _, s := range Stretches(c) {
+		lo, hi := s[0], s[0]
+		for i := s[0]; i <= s[1]; i++ {
+			for along[i]-along[lo] > around {
+				lo++
+			}
+			hi = max(hi, i)
+			for hi < s[1] && along[hi+1]-along[i] <= around {
+				hi++
+			}
+			var sum, weight float64
+			for j := lo; j <= hi; j++ {
+				if math.IsNaN(values[j]) {
+					continue
+				}
+				w := 1.0
+				switch {
+				case !c.Timed:
+				case j < s[1]:
+					w = (c.Points[j+1].Elapsed - c.Points[j].Elapsed).Seconds()
+				case j > s[0]: // the stretch's last point, held as long as the one before
+					w = (c.Points[j].Elapsed - c.Points[j-1].Elapsed).Seconds()
+				}
+				sum, weight = sum+w*values[j], weight+w
+			}
+			out[i] = sum / weight // NaN, 0/0, when nothing around is known
+		}
+	}
+	return out
+}
+
 // Spread is the range of the known values worth telling apart: from the
 // share tail up from the lowest to the same down from the highest, so a GPS
 // spike or a standstill does not push every other value into the middle of

@@ -68,13 +68,15 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
-### Colouring by pace, elevation or grade
+### Colouring by pace, elevation, grade, heart rate or power
 
 ```
 ./course map run.fit --colour pace
 ./course map ride.fit --colour elevation
 ./course map walk.fit --colour grade
 ./course map hike.fit --colour grade --grade-cap 30
+./course map run.fit --colour heart-rate
+./course map run.fit --colour power --power-source native
 ```
 
 `--colour` colours the course by a metric along it, from blue at its slowest or lowest to red
@@ -100,6 +102,15 @@ line are coloured by the steepest grade in them rather than their average, so a 
 shorter than the map can show still stands out at a whole course's zoom. A raw altimeter or
 GPS altitude wanders by metres, and a slope taken from it unsmoothed is a saw-tooth of climbs
 that were never there.
+
+`heart-rate` and `power` are the recording's own readings, averaged over 30 m either side of
+each point by how long each was held, so a power meter's second-to-second swings do not fleck
+the line; the scale runs from the course's lowest to its highest, as pace does, and at least
+10 beats a minute or 5% of the power either way. Many recordings carry power from two
+sensors that disagree by a quarter or more -- a footpod such as Stryd, and the watch's own.
+`--power-source` picks which, exactly as it does in videofx and fitdash: `auto` (the default)
+the footpod's where there is one and the watch's otherwise, `stryd` or `native` only that
+one. The legend and the report say which sensor the colours are.
 
 Where the file has no value -- no elevation for a stretch, a gap in the recording --
 the course is not coloured, and a course without times or without any elevation is refused

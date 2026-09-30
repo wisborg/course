@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wisborg/fitactivity"
 	"github.com/wisborg/fitactivity/fittest"
 )
 
@@ -138,5 +139,67 @@ func TestRead(t *testing.T) {
 	}
 	if _, err := Read(plan, gpx); err == nil {
 		t.Error("a plan was merged with a recording")
+	}
+}
+
+// A recording's heart rate and both its power readings are kept, and Power
+// chooses between them by fitactivity's rule: auto takes the footpod's
+// where there is one and the standard field otherwise; the forced sources
+// never substitute the other; and no reading is no power, not 0 W.
+func TestPointPower(t *testing.T) {
+	native := Point{HasNativePower: true, NativePower: 250}
+	stryd := Point{HasStrydPower: true, StrydPower: 200}
+	both := Point{HasNativePower: true, NativePower: 250, HasStrydPower: true, StrydPower: 200}
+	standing := Point{HasNativePower: true, NativePower: 0}
+	for _, c := range []struct {
+		p    Point
+		src  fitactivity.PowerSource
+		want float64
+		ok   bool
+	}{
+		{both, fitactivity.PowerAuto, 200, true},
+		{both, fitactivity.PowerStryd, 200, true},
+		{both, fitactivity.PowerNative, 250, true},
+		{native, fitactivity.PowerAuto, 250, true},
+		{native, fitactivity.PowerStryd, 0, false},
+		{stryd, fitactivity.PowerNative, 0, false},
+		{stryd, fitactivity.PowerAuto, 200, true},
+		{Point{}, fitactivity.PowerAuto, 0, false},
+		{standing, fitactivity.PowerAuto, 0, true},
+	} {
+		if got, ok := c.p.Power(c.src); got != c.want || ok != c.ok {
+			t.Errorf("%+v.Power(%v) = %v, %v; want %v, %v", c.p, c.src, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestReadHeartRateAndPower(t *testing.T) {
+	fit := filepath.Join(t.TempDir(), "run.fit")
+	opts := fittest.DefaultOptions()
+	opts.Count, opts.PowerWatts, opts.DeveloperField = 60, 250, fitactivity.StrydPowerField
+	if err := fittest.WriteFile(fit, opts); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Read(fit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Points[10]
+	if !p.HasHeartRate || p.HeartRate < 130 || p.HeartRate > 150 {
+		t.Errorf("heart rate %v %v, want the fixture's 130-150", p.HasHeartRate, p.HeartRate)
+	}
+	if !p.HasNativePower || p.NativePower != 250 || !p.HasStrydPower || p.StrydPower != float64(fittest.DeveloperFieldRaw(10)) {
+		t.Errorf("power: native %v %v, Stryd %v %v; want 250 and %v", p.HasNativePower, p.NativePower, p.HasStrydPower, p.StrydPower, fittest.DeveloperFieldRaw(10))
+	}
+
+	gpx := write(t, "run.gpx", `<gpx><trk><trkseg>
+		<trkpt lat="10" lon="20"><time>2026-04-02T06:00:00Z</time></trkpt>
+		<trkpt lat="10.001" lon="20"><time>2026-04-02T06:00:30Z</time></trkpt>
+		</trkseg></trk></gpx>`)
+	if c, err = Read(gpx); err != nil {
+		t.Fatal(err)
+	}
+	if p := c.Points[1]; p.HasHeartRate || p.HasNativePower || p.HasStrydPower {
+		t.Errorf("a GPX with no sensors has %+v", p)
 	}
 }
