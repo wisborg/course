@@ -100,6 +100,8 @@ func TestMapColour(t *testing.T) {
 		{[]string{"--colour", "grade", plan}, "no elevation"},
 		{[]string{"--colour", "grade", oneHeight}, "too little elevation"},
 		{[]string{"--colour", "power", run1}, "pace, elevation or grade"},
+		{[]string{"--colour", "pace", "--grade-cap", "25", run1}, "--grade-cap is for --colour grade"},
+		{[]string{"--colour", "grade", "--grade-cap", "0", run1}, "more than 0"},
 		{[]string{"--colour", "pace", "--compare", run1, run1}, "use one"},
 	} {
 		resetNow(mapCmd)
@@ -249,6 +251,25 @@ func TestMapColourGrade(t *testing.T) {
 		t.Errorf("--colour grade of a gentle hill: %v\n%s", err, o)
 	} else if fmt.Sscanf(o[i+len("by grade, -"):], "%f%%", &reach); reach < 7 || reach > 8.5 {
 		t.Errorf("--colour grade of a hill up at 4%% and down at 8%% reaches %v%%, want about 8:\n%s", reach, o)
+	}
+
+	// With the cap raised past the hill's 20%, the scale reaches the
+	// hill's own steepest and the ends are no longer "or steeper".
+	resetNow(mapCmd)
+	o, err = run(t, "map", "--store", filepath.Join(dir, "store"), "--out", filepath.Join(dir, "capped.png"), "--width", "600", "--height", "400", "--colour", "grade", "--grade-cap", "30", run1)
+	if err != nil || strings.Contains(o, "≥") || !strings.Contains(o, "by grade, -") {
+		t.Errorf("--grade-cap 30 on a 20%% hill: %v\n%s", err, o)
+	} else if i := strings.Index(o, "(blue) to +"); i >= 0 {
+		var reach float64
+		if fmt.Sscanf(o[i+len("(blue) to +"):], "%f%%", &reach); reach < 17 || reach > 21 {
+			t.Errorf("--grade-cap 30 on a 20%% hill reaches %v%%, want about 20:\n%s", reach, o)
+		}
+	}
+	// And lowered under it, the scale stops at the lower cap.
+	resetNow(mapCmd)
+	o, err = run(t, "map", "--store", filepath.Join(dir, "store"), "--out", filepath.Join(dir, "capped.png"), "--width", "600", "--height", "400", "--colour", "grade", "--grade-cap", "10", run1)
+	if err != nil || !strings.Contains(o, "by grade, ≤-10.0% (blue) to ≥+10.0% (red)") {
+		t.Errorf("--grade-cap 10 on a 20%% hill: %v\n%s", err, o)
 	}
 
 	lo, hi := render.DefaultColours[0], render.DefaultColours[len(render.DefaultColours)-1]

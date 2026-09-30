@@ -74,6 +74,7 @@ The system fonts are read on this machine and never copied anywhere.
 ./course map run.fit --colour pace
 ./course map ride.fit --colour elevation
 ./course map walk.fit --colour grade
+./course map hike.fit --colour grade --grade-cap 30
 ```
 
 `--colour` colours the course by a metric along it, from blue at its slowest or lowest to red
@@ -86,8 +87,10 @@ point.
 
 `grade` is the slope: red climbing, blue descending, green level in the middle of a scale
 that reaches the course's own steepest grade either way -- at least 3%, so level ground is not
-painted in the ramp's strongest colours, and at most 15%, past which the ends mean "this steep
-or steeper" and the legend says so. It is
+painted in the ramp's strongest colours, and at most `--grade-cap` (15% unless told), past
+which the ends mean "this steep or steeper" and the legend says so. A mountain hike can be
+steeper than 15% for a third of its length; `--grade-cap 30` tells those stretches apart
+instead of drawing them all one colour. It is
 taken from the elevation smoothed by [fitactivity](https://github.com/wisborg/fitactivity),
 tuned to the device's own total ascent and descent where the file has them as videofx and
 fitdash tune it, then over 10 m either side of each point: narrower than the 30 m those two

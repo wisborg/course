@@ -42,6 +42,7 @@ var mapOpts struct {
 	whole         bool
 	compare       string
 	colour        string
+	gradeCap      float64
 }
 
 var mapCmd = &cobra.Command{
@@ -83,6 +84,7 @@ func init() {
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
 	f.StringVar(&mapOpts.colour, "colour", "", "colour the course by a metric along it: pace, elevation or grade (the slope)")
+	f.Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
 	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
 	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
 	f.BoolVar(&mapOpts.greatCircle, "great-circle", false, "draw the great circle between the course's start and finish, dashed: the shortest way over the globe")
@@ -108,7 +110,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if len(c.Points) == 0 {
 		return errors.New("the course has no positions to draw")
 	}
-	if err := checkColour(c, mapOpts.colour, mapOpts.compare); err != nil {
+	if err := checkColour(c, mapOpts.colour, mapOpts.compare, cmd.Flags().Changed("grade-cap"), mapOpts.gradeCap); err != nil {
 		return err
 	}
 	out := mapOpts.out
@@ -155,7 +157,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	case mapOpts.compare != "":
 		col, err = compareWith(c, nameOf(args[0]), mapOpts.compare, scale)
 	case mapOpts.colour != "":
-		col, err = colourBy(c, nameOf(args[0]), mapOpts.colour, scale)
+		col, err = colourBy(c, nameOf(args[0]), mapOpts.colour, mapOpts.gradeCap/100, scale)
 	}
 	if err != nil {
 		return err

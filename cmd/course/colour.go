@@ -35,7 +35,15 @@ const minPaceSpread = 0.05
 // checkColour refuses a --colour the course cannot be coloured by, before
 // any map is fetched or drawn: an unknown metric, one the file does not
 // record at all, or --colour with --compare, which colours by something else.
-func checkColour(c *course.Course, metric, compareWith string) error {
+// It refuses a --grade-cap that is not a slope, and one given without
+// --colour grade, which would otherwise be silently ignored.
+func checkColour(c *course.Course, metric, compareWith string, capGiven bool, capPercent float64) error {
+	if capGiven && metric != "grade" {
+		return errors.New("--grade-cap is for --colour grade")
+	}
+	if !(capPercent > 0) {
+		return fmt.Errorf("--grade-cap %v: the cap is a grade in per cent, more than 0", capPercent)
+	}
 	switch metric {
 	case "":
 		return nil
@@ -59,7 +67,15 @@ func checkColour(c *course.Course, metric, compareWith string) error {
 // colourBy colours c by metric along it, on a scale from the slowest or
 // lowest of it to the fastest or highest, with the ends' values in the
 // legend.
-func colourBy(c *course.Course, name, metric string, scale float64) (*colouring, error) {
+//
+// gradeCap is the most a grade scale reaches either way, as a fraction:
+// --grade-cap, 15% unless told otherwise. Below it the scale reaches the
+// course's own steepest grade, so a gentle course is not one green; at it,
+// steeper ground takes the end colour and the legend says so. Without a cap
+// a staircase at -26% stretched the scale until a 14% bridge ramp was yellow
+// and the rest of a half marathon one green. A mountain hike with long
+// stretches steeper than 15% wants a higher one, or they are all one colour.
+func colourBy(c *course.Course, name, metric string, gradeCap, scale float64) (*colouring, error) {
 	switch metric {
 	case "pace":
 		speed := routemap.Speed(c, paceAround)
@@ -94,7 +110,7 @@ func colourBy(c *course.Course, name, metric string, scale float64) (*colouring,
 			return nil, errors.New("--colour grade: the course has too little elevation to take a slope from")
 		}
 		// As far as the course's steepest grade either way, level in the
-		// middle; but no less than minGrade, and no more than gradeCap,
+		// middle; but no less than minGrade, and no more than the cap,
 		// past which the ends' colours say "this steep or steeper".
 		steepest := max(math.Abs(lo), math.Abs(hi))
 		reach := min(max(steepest, minGrade), gradeCap)
@@ -138,14 +154,6 @@ const gradeWindow = 10.0
 // course with nothing steeper than 1%, the ends of the ramp are not spent on
 // what is, to a runner, level ground.
 const minGrade = 0.03
-
-// gradeCap is the most the grade scale reaches either way. Below it the
-// scale reaches the course's own steepest grade, so a gentle course is not
-// one green; at it, steeper ground takes the end colour and the legend says
-// so. Without a cap a staircase at -26% stretched the scale until a 14%
-// bridge ramp was yellow and the rest of a half marathon one green; at 15%
-// the ramp is red and the stairs blue past the end.
-const gradeCap = 0.15
 
 // gradeText is a grade the way videofx writes one: a signed percentage.
 func gradeText(g float64) string { return fmt.Sprintf("%+.1f%%", 100*g) }
