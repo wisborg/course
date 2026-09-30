@@ -89,7 +89,13 @@ func colourBy(c *course.Course, name, metric string, scale float64) (*colouring,
 		}, nil
 	case "grade":
 		grade := routemap.Grade(c, gradeWindow)
-		lo, hi, ok := routemap.Spread(grade, spreadTail)
+		// The whole range, no tail left out: the steepest pitches are
+		// what a slope map is looked at for, and they are short -- a
+		// bridge ramp of 75 m at 14% is well under 5% of a half
+		// marathon, and trimmed off it was drawn the same red as a 3%
+		// slope. The smoothing has already taken out the altimeter's
+		// spikes, so the extremes left are the ground's.
+		lo, hi, ok := routemap.Spread(grade, 0)
 		if !ok {
 			return nil, errors.New("--colour grade: the course has too little elevation to take a slope from")
 		}

@@ -86,7 +86,10 @@ point.
 
 `grade` is the slope: red climbing, blue descending, green level, on a scale with level
 ground in its middle that reaches as far as the steepest of the course either way, and at
-least 3%. It is taken over 30 m either side of each point from the elevation smoothed by
+least 3%. Nothing is left out of that reach: a slope map is looked at for its steepest
+pitches, and they are short -- a 75 m bridge ramp is a sliver of a half marathon -- so a
+scale that dropped the most extreme few per cent would draw a 14% ramp the same red as a 3%
+rise. It is taken over 30 m either side of each point from the elevation smoothed by
 [fitactivity](https://github.com/wisborg/fitactivity) -- tuned to the device's own total
 ascent and descent where the file has them -- exactly as videofx and fitdash take it, so
 the three agree on the slope at any place in a file. A raw altimeter or GPS altitude wanders

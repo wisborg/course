@@ -254,3 +254,40 @@ func TestMapColourGrade(t *testing.T) {
 		t.Error("the descent, in the east, is not blue")
 	}
 }
+
+// A short steep pitch on a long level course sets the grade scale's reach:
+// a 75 m ramp at 14% is under 2% of the course, and a scale leaving out the
+// most extreme few per cent would draw it the same red as the gentlest
+// slope. Recorded as a watch records, a fix every 3 m.
+func TestMapColourGradeReachesTheSteepestPitch(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	run1, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "run.png")
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	ele := 10.0
+	for i := 0; i < 1500; i++ {
+		if i >= 700 && i < 725 {
+			ele += 0.42 // 14% over 3 m
+		}
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><ele>%.2f</ele><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.000027), ele, stamp(i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, run1, b.String())
+
+	o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "300", "--height", "200", "--colour", "grade", run1)
+	if err != nil {
+		t.Fatalf("--colour grade: %v\n%s", err, o)
+	}
+	i := strings.Index(o, "(blue) to +")
+	var reach float64
+	if i < 0 {
+		t.Fatalf("no grade range reported:\n%s", o)
+	}
+	if _, err := fmt.Sscanf(o[i+len("(blue) to +"):], "%f%%", &reach); err != nil || reach < 10 || reach > 15 {
+		t.Errorf("the grade scale reaches %v%%, want the ramp's 14%% less a little smoothing:\n%s", reach, o)
+	}
+}
