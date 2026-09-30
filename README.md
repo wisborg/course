@@ -84,17 +84,17 @@ run or a flat course is shown over at least 5% of its speed either side, or 20 m
 rather than spreading the whole ramp over noise. Pace is taken over 30 m either side of each
 point.
 
-`grade` is the slope: red climbing, blue descending, green level, on a scale with level
-ground in its middle that reaches as far as the steepest of the course either way, and at
-least 3%. Nothing is left out of that reach: a slope map is looked at for its steepest
-pitches, and they are short -- a 75 m bridge ramp is a sliver of a half marathon -- so a
-scale that dropped the most extreme few per cent would draw a 14% ramp the same red as a 3%
-rise. It is taken over 30 m either side of each point from the elevation smoothed by
-[fitactivity](https://github.com/wisborg/fitactivity) -- tuned to the device's own total
-ascent and descent where the file has them -- exactly as videofx and fitdash take it, so
-the three agree on the slope at any place in a file. A raw altimeter or GPS altitude wanders
-by metres, and a slope taken from it unsmoothed is a saw-tooth of climbs that were never
-there.
+`grade` is the slope: red climbing, blue descending, green level, on the same scale on every
+map -- 15% or steeper at each end, so one colour is one slope from one map to the next. It is
+taken from the elevation smoothed by [fitactivity](https://github.com/wisborg/fitactivity),
+tuned to the device's own total ascent and descent where the file has them as videofx and
+fitdash tune it, then over 10 m either side of each point: narrower than the 30 m those two
+read a grade over, because a map is looked at for the steep pitches and they are short -- a
+staircase that drops 8 m in 22 m reads -26% here and -14% over 30 m. Each few pixels of the
+line are coloured by the steepest grade in them rather than their average, so a pitch much
+shorter than the map can show still stands out at a whole course's zoom. A raw altimeter or
+GPS altitude wanders by metres, and a slope taken from it unsmoothed is a saw-tooth of climbs
+that were never there.
 
 Where the file has no value -- no elevation for a stretch, a gap in the recording --
 the course is not coloured, and a course without times or without any elevation is refused

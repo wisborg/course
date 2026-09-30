@@ -89,23 +89,24 @@ func colourBy(c *course.Course, name, metric string, scale float64) (*colouring,
 		}, nil
 	case "grade":
 		grade := routemap.Grade(c, gradeWindow)
-		// The whole range, no tail left out: the steepest pitches are
-		// what a slope map is looked at for, and they are short -- a
-		// bridge ramp of 75 m at 14% is well under 5% of a half
-		// marathon, and trimmed off it was drawn the same red as a 3%
-		// slope. The smoothing has already taken out the altimeter's
-		// spikes, so the extremes left are the ground's.
-		lo, hi, ok := routemap.Spread(grade, 0)
-		if !ok {
+		if _, _, ok := routemap.Spread(grade, 0); !ok {
 			return nil, errors.New("--colour grade: the course has too little elevation to take a slope from")
 		}
-		// Level in the middle of the scale, whatever the course: a climb
-		// is red and a descent blue on every map, and a course that only
-		// climbs is not coloured blue for its gentlest climb.
-		m := max(math.Abs(lo), math.Abs(hi), minGrade)
-		r := ramp{scale: render.Scale{Min: -m, Max: m}, low: gradeText(-m), high: gradeText(m)}
+		r := ramp{
+			scale: render.Scale{Min: -gradeReach, Max: gradeReach},
+			low:   "≤" + gradeText(-gradeReach),
+			high:  "≥" + gradeText(gradeReach),
+		}
+		gs := routemap.Gradients(c, grade, r.scale, scale)
+		for i := range gs {
+			// Each piece of the line by its steepest grade, not its
+			// average: at a whole course's zoom a piece is tens of
+			// metres, and a staircase averaged with the level ground
+			// either side is drawn as a gentle slope.
+			gs[i].Peaks = true
+		}
 		return &colouring{
-			gradients: routemap.Gradients(c, grade, r.scale, scale),
+			gradients: gs,
 			legend:    name + ", grade",
 			ramp:      r,
 			report:    fmt.Sprintf("%-10s by grade, %s (blue) to %s (red)", "coloured", r.low, r.high),
@@ -118,14 +119,25 @@ func colourBy(c *course.Course, name, metric string, scale float64) (*colouring,
 const colourMetrics = "pace, elevation or grade"
 
 // gradeWindow is how far either side of a point its grade is taken over, in
-// metres: videofx's and fitdash's own, so the three give one slope for one
-// place in one file.
-const gradeWindow = 30.0
+// metres. Narrower than the 30 m videofx and fitdash read a grade over:
+// theirs is a number on screen that must not jump about from frame to
+// frame, this is a map meant to show where the steep pitches are, and they
+// are short. A staircase dropping 7.8 m in 22 m read -14% over 30 m either
+// side and -26% over 10; a bridge ramp of 75 m at 14% read the same either
+// way, and a half marathon had no more pitches over 10% than before. The
+// elevation is smoothed first all the same, tuned as the siblings tune it,
+// so the altimeter's own noise is gone before the window is taken.
+const gradeWindow = 10.0
 
-// minGrade is the least slope the grade scale reaches either way: on a
-// course with nothing steeper than 1%, the ends of the ramp are not spent on
-// what is, to a runner, level ground.
-const minGrade = 0.03
+// gradeReach is how steep a slope the grade scale tells apart, either way:
+// level ground in the middle, and 15% or steeper at each end. The same on
+// every map, because a grade means the same on any course -- unlike pace or
+// height, which have no common range -- and so one colour is one slope from
+// a map to the next. Reaching to each course's own steepest did not work: a
+// staircase at -26% stretched the scale until a 14% bridge ramp was yellow
+// and the rest of a half marathon one green. At 15%, the ramp is red, the
+// stairs are blue past the end, and a 5% hill is plainly tinted.
+const gradeReach = 0.15
 
 // gradeText is a grade the way videofx writes one: a signed percentage.
 func gradeText(g float64) string { return fmt.Sprintf("%+.1f%%", 100*g) }
