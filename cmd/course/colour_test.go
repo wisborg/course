@@ -188,8 +188,8 @@ func TestMapColourOfAnEvenFlatRun(t *testing.T) {
 		// 21.9 m in 5 s, 3:48/km: 5% of the speed either side is 4:00
 		// and 3:37.
 		"pace": "4:00/km (blue) to 3:37/km (red)",
-		// Level ground: the grade scale is the same fixed 15% either way.
-		"grade": "≤-15.0% (blue) to ≥+15.0% (red)",
+		// Level ground: the grade scale still reaches 3% either way.
+		"grade": "-3.0% (blue) to +3.0% (red)",
 	} {
 		resetNow(mapCmd)
 		o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "300", "--height", "200", "--colour", metric, run1)
@@ -199,9 +199,11 @@ func TestMapColourOfAnEvenFlatRun(t *testing.T) {
 	}
 }
 
-// --colour grade colours a climb red and a descent blue on a fixed scale,
-// level ground in its middle and 15% or steeper at the ends, whatever the
-// course; the legend and report say the ends as videofx writes a grade.
+// --colour grade colours a climb red and a descent blue, level ground in the
+// middle of the scale; a course steeper than 15% has the scale stop there,
+// and the legend and report say the ends are "this steep or steeper", as
+// videofx writes a grade. A gentler course's scale reaches only its own
+// steepest, with no such marks.
 func TestMapColourGrade(t *testing.T) {
 	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
 	stdinAnswerable = func() bool { return false }
@@ -228,6 +230,27 @@ func TestMapColourGrade(t *testing.T) {
 		t.Errorf("--colour grade reports:\n%s", o)
 	}
 	img := decodePNG(t, out)
+
+	gentle := filepath.Join(dir, "gentle.gpx")
+	var g strings.Builder
+	g.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 100; i++ {
+		// Up at 4% for two thirds, down at 8%: the scale reaches the
+		// steeper of the two either way.
+		ele := 0.88 * float64(min(i, 132-2*i))
+		fmt.Fprintf(&g, `<trkpt lat="10" lon="%s"><ele>%.2f</ele><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.0002), ele, stamp(10*i))
+	}
+	g.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, gentle, g.String())
+	resetNow(mapCmd)
+	o, err = run(t, "map", "--store", filepath.Join(dir, "store"), "--out", filepath.Join(dir, "gentle.png"), "--width", "600", "--height", "400", "--colour", "grade", gentle)
+	var reach float64
+	if i := strings.Index(o, "by grade, -"); err != nil || i < 0 || strings.Contains(o, "≤") {
+		t.Errorf("--colour grade of a gentle hill: %v\n%s", err, o)
+	} else if fmt.Sscanf(o[i+len("by grade, -"):], "%f%%", &reach); reach < 7 || reach > 8.5 {
+		t.Errorf("--colour grade of a hill up at 4%% and down at 8%% reaches %v%%, want about 8:\n%s", reach, o)
+	}
+
 	lo, hi := render.DefaultColours[0], render.DefaultColours[len(render.DefaultColours)-1]
 	blue, red := [3]uint8{lo.R, lo.G, lo.B}, [3]uint8{hi.R, hi.G, hi.B}
 	if !hasColour(img, red, 50, 250, 100, 400) || hasColour(img, blue, 50, 250, 100, 400) {
@@ -238,12 +261,13 @@ func TestMapColourGrade(t *testing.T) {
 	}
 }
 
-// A short steep pitch on a long level course is still red at the whole
-// course's zoom: 45 m at 20% on a 9 km course is under a piece of the line
-// there, 4 pixels of 30 m, and averaged with the level ground either side it
-// would be drawn a gentle yellow; taken over 30 m either side rather than
-// 10 it reads gentler too. Recorded as a watch records, a fix every 3 m.
-func TestMapColourGradeShowsAShortPitch(t *testing.T) {
+// A staircase on a long level course -- 22 m at -35%, walked at 1.8 m a
+// second -- is still blue at the whole course's zoom, and reads its
+// steepness: taken over 30 m either side rather than 10 it would read about
+// half as steep, and averaged into a piece of the line with the level ground
+// either side it would be drawn a gentle green. A fix every second, as a
+// watch records.
+func TestMapColourGradeShowsAStaircase(t *testing.T) {
 	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
 	stdinAnswerable = func() bool { return false }
 	resetFlags(t, mapCmd)
@@ -252,31 +276,38 @@ func TestMapColourGradeShowsAShortPitch(t *testing.T) {
 	run1, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "run.png")
 	var b strings.Builder
 	b.WriteString(`<gpx><trk><trkseg>`)
-	ele := 10.0
+	x, ele := 0.0, 20.0
 	for i := 0; i < 3000; i++ {
-		if i >= 1500 && i < 1515 {
-			ele += 0.6 // 20% over 3 m, for 45 m
+		step := 3.0
+		if i >= 1500 && i < 1512 {
+			step, ele = 1.8, ele-0.63 // down the stairs
 		}
-		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><ele>%.2f</ele><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.000027), ele, stamp(i))
+		x += step
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><ele>%.2f</ele><time>%s</time></trkpt>`, ftoa6(20+x/109_600), ele, stamp(i))
 	}
 	b.WriteString(`</trkseg></trk></gpx>`)
 	writeFile(t, run1, b.String())
 
-	if o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "300", "--height", "200", "--colour", "grade", run1); err != nil {
+	o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "300", "--height", "200", "--colour", "grade", run1)
+	if err != nil {
 		t.Fatalf("--colour grade: %v\n%s", err, o)
 	}
+	// Past the scale's 15% cap, which the report marks; over 30 m either
+	// side it reads about 11%.
+	if !strings.Contains(o, "by grade, ≤-15.0% (blue)") {
+		t.Errorf("the staircase does not read 15%% or steeper:\n%s", o)
+	}
 	img := decodePNG(t, out)
-	// Around the pitch, halfway along, clear of the red start marker at
-	// the west end.
-	reddest := 0
+	// Around the stairs, halfway along.
+	bluest := 0
 	for y := 60; y < 200; y++ {
 		for x := 110; x < 190; x++ {
-			r, g, _, _ := img.At(x, y).RGBA()
-			reddest = max(reddest, int(r>>8)-int(g>>8))
+			r, _, b, _ := img.At(x, y).RGBA()
+			bluest = max(bluest, int(b>>8)-int(r>>8))
 		}
 	}
-	if reddest < 100 {
-		t.Errorf("the 20%% pitch is nowhere drawn red: at most %d more red than green", reddest)
+	if bluest < 150 {
+		t.Errorf("the staircase is nowhere drawn blue: at most %d more blue than red", bluest)
 	}
 }
 

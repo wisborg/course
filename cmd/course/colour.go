@@ -89,13 +89,18 @@ func colourBy(c *course.Course, name, metric string, scale float64) (*colouring,
 		}, nil
 	case "grade":
 		grade := routemap.Grade(c, gradeWindow)
-		if _, _, ok := routemap.Spread(grade, 0); !ok {
+		lo, hi, ok := routemap.Spread(grade, 0)
+		if !ok {
 			return nil, errors.New("--colour grade: the course has too little elevation to take a slope from")
 		}
-		r := ramp{
-			scale: render.Scale{Min: -gradeReach, Max: gradeReach},
-			low:   "≤" + gradeText(-gradeReach),
-			high:  "≥" + gradeText(gradeReach),
+		// As far as the course's steepest grade either way, level in the
+		// middle; but no less than minGrade, and no more than gradeCap,
+		// past which the ends' colours say "this steep or steeper".
+		steepest := max(math.Abs(lo), math.Abs(hi))
+		reach := min(max(steepest, minGrade), gradeCap)
+		r := ramp{scale: render.Scale{Min: -reach, Max: reach}, low: gradeText(-reach), high: gradeText(reach)}
+		if steepest > gradeCap {
+			r.low, r.high = "≤"+r.low, "≥"+r.high
 		}
 		gs := routemap.Gradients(c, grade, r.scale, scale)
 		for i := range gs {
@@ -129,15 +134,18 @@ const colourMetrics = "pace, elevation or grade"
 // so the altimeter's own noise is gone before the window is taken.
 const gradeWindow = 10.0
 
-// gradeReach is how steep a slope the grade scale tells apart, either way:
-// level ground in the middle, and 15% or steeper at each end. The same on
-// every map, because a grade means the same on any course -- unlike pace or
-// height, which have no common range -- and so one colour is one slope from
-// a map to the next. Reaching to each course's own steepest did not work: a
-// staircase at -26% stretched the scale until a 14% bridge ramp was yellow
-// and the rest of a half marathon one green. At 15%, the ramp is red, the
-// stairs are blue past the end, and a 5% hill is plainly tinted.
-const gradeReach = 0.15
+// minGrade is the least slope the grade scale reaches either way: on a
+// course with nothing steeper than 1%, the ends of the ramp are not spent on
+// what is, to a runner, level ground.
+const minGrade = 0.03
+
+// gradeCap is the most the grade scale reaches either way. Below it the
+// scale reaches the course's own steepest grade, so a gentle course is not
+// one green; at it, steeper ground takes the end colour and the legend says
+// so. Without a cap a staircase at -26% stretched the scale until a 14%
+// bridge ramp was yellow and the rest of a half marathon one green; at 15%
+// the ramp is red and the stairs blue past the end.
+const gradeCap = 0.15
 
 // gradeText is a grade the way videofx writes one: a signed percentage.
 func gradeText(g float64) string { return fmt.Sprintf("%+.1f%%", 100*g) }

@@ -84,8 +84,10 @@ run or a flat course is shown over at least 5% of its speed either side, or 20 m
 rather than spreading the whole ramp over noise. Pace is taken over 30 m either side of each
 point.
 
-`grade` is the slope: red climbing, blue descending, green level, on the same scale on every
-map -- 15% or steeper at each end, so one colour is one slope from one map to the next. It is
+`grade` is the slope: red climbing, blue descending, green level in the middle of a scale
+that reaches the course's own steepest grade either way -- at least 3%, so level ground is not
+painted in the ramp's strongest colours, and at most 15%, past which the ends mean "this steep
+or steeper" and the legend says so. It is
 taken from the elevation smoothed by [fitactivity](https://github.com/wisborg/fitactivity),
 tuned to the device's own total ascent and descent where the file has them as videofx and
 fitdash tune it, then over 10 m either side of each point: narrower than the 30 m those two
