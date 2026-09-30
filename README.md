@@ -68,6 +68,23 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
+### Colouring by pace or elevation
+
+```
+./course map run.fit --colour pace
+./course map ride.fit --colour elevation
+```
+
+`--colour` colours the course by a metric along it, from blue at its slowest or lowest to red
+at its fastest or highest, with a colour bar in the legend giving the pace or height at each
+end. The ends are set by the course itself, with the few most extreme values at each end left
+out, so a sprint finish or a standstill does not squeeze the rest into one colour; an even
+run or a flat course is shown over at least 5% of its speed either side, or 20 m of height,
+rather than spreading the whole ramp over noise. Pace is taken over 30 m either side of each
+point. Where the file has no value -- no elevation for a stretch, a gap in the recording --
+the course is not coloured, and a course without times or without any elevation is refused
+rather than drawn in one colour.
+
 ### References
 
 ```

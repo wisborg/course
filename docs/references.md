@@ -208,7 +208,8 @@ How finely the colours change is the drawing's to decide, not the comparison's: 
 `render.Gradient` takes a value at every point and colours pieces a few pixels long, each
 the length-weighted average of its values, so a whole marathon and one corner of a parkrun
 are both coloured as finely as the picture can show and no finer. The same drawing is meant
-for pace, height or power along a single run later.
+for colouring one run by its own pace or elevation, which `map --colour` now does, and by
+heart rate or power once `course` reads them.
 
 `course compare run.fit --reference "Rhodes parkrun"` is the same comparison in words: splits
 of `--split` kilometres (1 by default) measured along the reference -- the same ground for

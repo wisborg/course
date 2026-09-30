@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
 	"image/draw"
 	"image/png"
 	"io"
@@ -42,6 +41,7 @@ var mapOpts struct {
 	greatCircle   bool
 	whole         bool
 	compare       string
+	colour        string
 }
 
 var mapCmd = &cobra.Command{
@@ -82,6 +82,7 @@ func init() {
 	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
+	f.StringVar(&mapOpts.colour, "colour", "", "colour the course by a metric along it: pace or elevation")
 	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
 	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
 	f.BoolVar(&mapOpts.greatCircle, "great-circle", false, "draw the great circle between the course's start and finish, dashed: the shortest way over the globe")
@@ -106,6 +107,9 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	if len(c.Points) == 0 {
 		return errors.New("the course has no positions to draw")
+	}
+	if err := checkColour(c, mapOpts.colour, mapOpts.compare); err != nil {
+		return err
 	}
 	out := mapOpts.out
 	if out == "" {
@@ -146,32 +150,38 @@ func runMap(cmd *cobra.Command, args []string) error {
 	face := faceAt(baseTextSize * scale)
 	inks := routemap.InksFor(palette, overlay)
 	drawing := routemap.Drawing(c, view, inks, scale)
-	var cmp *comparison
-	if mapOpts.compare != "" {
-		if cmp, err = compareWith(c, mapOpts.compare, scale); err != nil {
-			return err
-		}
-		// The whole course thin and grey, for the stretches outside the
-		// one compared -- a warm-up, a cool-down -- and the compared
-		// stretch coloured over it.
+	var col *colouring
+	switch {
+	case mapOpts.compare != "":
+		col, err = compareWith(c, nameOf(args[0]), mapOpts.compare, scale)
+	case mapOpts.colour != "":
+		col, err = colourBy(c, nameOf(args[0]), mapOpts.colour, scale)
+	}
+	if err != nil {
+		return err
+	}
+	if col != nil {
+		// The whole course thin and grey under the colours: it shows
+		// where nothing is coloured -- a warm-up outside the stretch
+		// compared, a gap in the recording -- and the colours go over it.
 		for i := range drawing.Lines {
-			drawing.Lines[i].Ink, drawing.Lines[i].Dash = inks.Gap, nil
+			drawing.Lines[i].Ink = inks.Gap
 			drawing.Lines[i].Width *= 0.5
 			drawing.Lines[i].Halo *= 0.5
 		}
-		drawing.Gradients = append(drawing.Gradients, cmp.gradient)
+		drawing.Gradients = append(drawing.Gradients, col.gradients...)
 	}
 	refInks := routemap.ReferenceInks(palette)
 	drawing = routemap.WithReferences(drawing, refs, refInks, inks.Halo, scale)
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
 	}
-	if len(refs) > 0 || cmp != nil {
+	if len(refs) > 0 || col != nil {
 		var legend []entry
-		if cmp == nil {
+		if col == nil {
 			legend = append(legend, entry{name: nameOf(args[0]), ink: inks.Route})
 		} else {
-			legend = append(legend, entry{name: nameOf(args[0]) + " against " + cmp.name, ramp: &cmp.ramp})
+			legend = append(legend, entry{name: col.legend, ramp: &col.ramp})
 		}
 		for i, r := range refs {
 			name := r.Name
@@ -190,9 +200,8 @@ func runMap(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	writeMapReport(cmd.OutOrStdout(), out, c, view, res, len(routemap.DistanceMarkers(c)))
-	if cmp != nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "%-10s against %s, %.2f km of it: %s\n", "compared", cmp.name,
-			float64(len(cmp.profile.Run)-1)*cmp.profile.Step/1000, gapText(cmp.profile.Gap(len(cmp.profile.Run)-1)))
+	if col != nil {
+		fmt.Fprintln(cmd.OutOrStdout(), col.report)
 	}
 	writeMissing(errw)
 	return nil
@@ -270,12 +279,14 @@ func loadReferences(c *course.Course, names []string, greatCircle, apart bool) (
 	return refs, nil
 }
 
-// comparison is a course coloured against another run of it.
-type comparison struct {
-	name     string
-	profile  *compare.Profile
-	gradient render.Gradient
-	ramp     ramp
+// colouring is a course coloured by a value along it -- its pace, its
+// height, its time against another run -- as the map draws it: the lines,
+// the legend's name and colour bar, and a line for the report.
+type colouring struct {
+	gradients []render.Gradient
+	legend    string
+	ramp      ramp
+	report    string
 }
 
 // compareRamp is how far the colours reach: 15% faster is red, 15% slower
@@ -292,13 +303,9 @@ var compareRamp = ramp{
 // colour the course on its own.
 const compareAround = 30
 
-// compareEdge is the thin dark edge round a coloured course: enough to hold
-// it off a map of any colour, little enough that the map shows beside it.
-var compareEdge = color.RGBA{R: 0x33, G: 0x33, B: 0x33, A: 0xff}
-
 // compareWith colours c against the run name names. How finely is the
 // drawing's to decide, from the view.
-func compareWith(c *course.Course, name string, scale float64) (*comparison, error) {
+func compareWith(c *course.Course, courseName, name string, scale float64) (*colouring, error) {
 	refName, ref, err := resolveCourse(name)
 	if err != nil {
 		return nil, fmt.Errorf("--compare %w", err)
@@ -307,15 +314,17 @@ func compareWith(c *course.Course, name string, scale float64) (*comparison, err
 	if err != nil {
 		return nil, fmt.Errorf("--compare %s: %w", refName, err)
 	}
-	g := render.Gradient{
-		Values: p.Faster(compareAround),
-		Scale:  compareRamp.scale,
-		Width:  3 * scale, Halo: 0.8 * scale, HaloInk: compareEdge,
-	}
+	var pts []render.Coord
 	for _, w := range p.Where {
-		g.Points = append(g.Points, render.Coord{Lat: w.Lat, Lon: w.Lon})
+		pts = append(pts, render.Coord{Lat: w.Lat, Lon: w.Lon})
 	}
-	return &comparison{name: refName, profile: p, gradient: g, ramp: compareRamp}, nil
+	last := len(p.Run) - 1
+	return &colouring{
+		gradients: []render.Gradient{routemap.Gradient(pts, p.Faster(compareAround), compareRamp.scale, scale)},
+		legend:    courseName + " against " + refName,
+		ramp:      compareRamp,
+		report:    fmt.Sprintf("%-10s against %s, %.2f km of it: %s", "compared", refName, float64(last)*p.Step/1000, gapText(p.Gap(last))),
+	}, nil
 }
 
 // gapText is the gap at the end of a comparison, in words.
