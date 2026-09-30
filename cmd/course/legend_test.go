@@ -1,0 +1,166 @@
+package main
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// A legend goes margin in from the corner asked for, and in the bottom right
+// above the credit, never over it.
+func TestLegendPlate(t *testing.T) {
+	b := image.Rect(0, 0, 400, 300)
+	size := image.Pt(100, 50)
+	for corner, want := range map[string]image.Rectangle{
+		"top-left":     image.Rect(10, 10, 110, 60),
+		"top-right":    image.Rect(290, 10, 390, 60),
+		"bottom-left":  image.Rect(10, 240, 110, 290),
+		"bottom-right": image.Rect(290, 210, 390, 260), // 30 px of credit below
+	} {
+		if got := legendPlate(b, size, corner, 10, 30); got != want {
+			t.Errorf("%s: %v, want %v", corner, got, want)
+		}
+	}
+	// A legend larger than the picture is cut to it, not drawn off it.
+	if got := legendPlate(b, image.Pt(500, 50), "top-left", 10, 0); got.Max.X != 400 {
+		t.Errorf("a legend wider than the picture: %v", got)
+	}
+}
+
+// Auto takes the corner that covers least of what is drawn; when two cover
+// as little, the earlier of top left, top right, bottom left, bottom right.
+func TestQuietestCorner(t *testing.T) {
+	overlay := image.NewRGBA(image.Rect(0, 0, 400, 300))
+	size := image.Pt(100, 50)
+	if got := quietestCorner(overlay, size, 10, 0); got != "top-left" {
+		t.Errorf("on nothing: %s, want top-left", got)
+	}
+	fill := func(r image.Rectangle) {
+		for y := r.Min.Y; y < r.Max.Y; y++ {
+			for x := r.Min.X; x < r.Max.X; x++ {
+				overlay.SetRGBA(x, y, color.RGBA{A: 0xff})
+			}
+		}
+	}
+	fill(image.Rect(0, 0, 150, 80))      // the start, top left
+	fill(image.Rect(300, 0, 400, 20))    // a little top right
+	fill(image.Rect(0, 250, 50, 300))    // a little more bottom left
+	fill(image.Rect(290, 180, 400, 300)) // the finish, bottom right
+	if got := quietestCorner(overlay, size, 10, 0); got != "top-right" {
+		t.Errorf("got %s, want top-right, which covers least", got)
+	}
+}
+
+// --legend puts the legend where it is told, or leaves it out; --title alone
+// asks for one; and a place that is not one is refused.
+func TestMapLegendFlags(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	run1, ref, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "ref.gpx"), filepath.Join(dir, "run.png")
+	writeLine(t, run1, 10, 20, 0.0002, 50)
+	writeLine(t, ref, 10.001, 20, 0.0002, 50)
+	store := filepath.Join(dir, "store")
+
+	// lighter reports whether the pixel near corner is lighter than the
+	// ground mid-picture: the legend's near-white plate is there.
+	plated := func(img image.Image, x, y int) bool {
+		lum := func(c color.Color) uint32 { r, g, b, _ := c.RGBA(); return r + g + b }
+		return lum(img.At(x, y)) > lum(img.At(600, 850))+3000 // the ground, clear of everything
+	}
+	draw := func(args ...string) image.Image {
+		t.Helper()
+		resetNow(mapCmd)
+		// Large enough that a legend has the size a real map's has.
+		all := append([]string{"map", "--store", store, "--out", out, "--width", "1200", "--height", "900"}, args...)
+		if o, err := run(t, append(all, run1)...); err != nil {
+			t.Fatalf("map %v: %v\n%s", args, err, o)
+		}
+		f, err := os.Open(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		img, err := png.Decode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return img
+	}
+
+	img := draw("--reference", ref, "--legend", "bottom-left")
+	if !plated(img, 12, 880) || plated(img, 12, 12) {
+		t.Error("--legend bottom-left: the legend is not in the bottom left, or is still in the top left")
+	}
+	if img := draw("--reference", ref, "--legend", "none"); plated(img, 12, 12) || plated(img, 12, 880) || plated(img, 1188, 12) {
+		t.Error("--legend none: a legend was drawn")
+	}
+	if img := draw(); plated(img, 12, 12) {
+		t.Error("a lone course with nothing asked for has a legend")
+	}
+	if img := draw("--title", "Morning run"); !plated(img, 12, 12) {
+		t.Error("--title alone draws no legend to show it in")
+	}
+
+	// The title is what the legend says: a long one is a wide legend.
+	if img := draw("--reference", ref, "--legend", "top-left"); plated(img, 250, 20) {
+		t.Fatal("the legend of a course called run already reaches 250 px across; the test needs it narrow")
+	}
+	if img := draw("--reference", ref, "--legend", "top-left", "--title", "A morning run along the tenth parallel"); !plated(img, 250, 20) {
+		t.Error("--title: the legend is no wider for a long title")
+	}
+
+	// A course from the top left to the bottom right leaves the other two
+	// corners clear; auto takes the first of them. Three references the
+	// course followed all the way draw nothing but make the legend tall
+	// enough to reach the start.
+	diagonal := filepath.Join(dir, "diagonal.gpx")
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 50; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="%s" lon="%s"><time>%s</time></trkpt>`, ftoa6(10.01-float64(i)*0.0002), ftoa6(20+float64(i)*0.0003), stamp(i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, diagonal, b.String())
+	resetNow(mapCmd)
+	if o, err := run(t, "map", "--store", store, "--out", out, "--width", "1200", "--height", "900", "--title", "Diagonal",
+		"--reference", diagonal, "--reference", diagonal, "--reference", diagonal, diagonal); err != nil {
+		t.Fatalf("map: %v\n%s", err, o)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err = png.Decode(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plated(img, 1188, 12) || plated(img, 12, 12) {
+		t.Error("auto: the legend is not in the clear top right, or is over the course in the top left")
+	}
+
+	resetNow(mapCmd)
+	if _, err := run(t, "map", "--store", store, "--out", out, "--legend", "middle", run1); err == nil || !strings.Contains(err.Error(), "top-left, top-right, bottom-left, bottom-right, auto or none") {
+		t.Errorf("--legend middle: %v", err)
+	}
+}
+
+// A bottom-right legend clears the credit by its plate and a margin, and
+// has the corner to itself when there is no credit.
+func TestCreditSpace(t *testing.T) {
+	face := faceAt(baseTextSize)
+	if got, want := creditSpace("© OpenStreetMap", face, 6), face.Metrics().Height.Ceil()+8+6; got != want {
+		t.Errorf("with a credit, %d, want %d", got, want)
+	}
+	if got := creditSpace("", face, 6); got != 0 {
+		t.Errorf("with none, %d, want 0", got)
+	}
+}

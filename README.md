@@ -68,6 +68,19 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
+### The legend
+
+A map with references or colours has a legend saying what each line or colour is. By default
+it goes in whichever corner covers least of the course, its markers and their labels;
+`--legend top-left` (or `top-right`, `bottom-left`, `bottom-right`) puts it there, above the
+map's credit in the bottom right, and `--legend none` leaves it out. The legend calls the
+course by its file's name unless `--title` names it; a title, or a corner, asks for a legend
+even on a map with nothing else in it.
+
+```
+./course map hike.fit --colour grade --title "Oia to Fira" --legend bottom-left
+```
+
 ### Colouring by a metric along the course
 
 ```
@@ -148,8 +161,8 @@ rather than drawn in one colour.
 
 `--reference` draws another course beside this one for comparison -- any file `course` reads,
 repeatable -- and `--great-circle` the shortest way over the globe between the course's start
-and finish. Each is dashed, under the course, in a colour of its own, and a legend in the top
-left says which line is which. The view holds the course and all of them.
+and finish. Each is dashed, under the course, in a colour of its own, and a legend says which
+line is which. The view holds the course and all of them.
 
 A reference the course followed is drawn only where the two part -- a closed bridge, a
 detour, the stretch a late-started watch never saw -- so the map is not buried under a

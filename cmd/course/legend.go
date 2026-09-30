@@ -28,34 +28,107 @@ type ramp struct {
 	low, high string
 }
 
-// drawLegend writes a legend in the top left of the picture, on a plate like
-// the credit's, so it reads over any map: a short sample of each line, solid
-// or dashed in its ink, and its name beside it.
-//
-// It is there because a dashed line on a map with nothing saying what it is
-// invites the wrong reading -- a detour, a gap in the recording -- and with
-// several references there is no other way to tell them apart.
-func drawLegend(img *image.RGBA, entries []entry, face font.Face, scale float64) {
-	if face == nil || len(entries) == 0 {
-		return
-	}
+// legendMetrics are the legend's sizes at scale: its padding, the length of
+// a line's sample and a colour bar, and a line's thickness and row height.
+type legendMetrics struct{ pad, sample, thick, lineH, bar int }
+
+func metricsFor(face font.Face, scale float64) legendMetrics {
 	pad := int(math.Round(6 * scale))
 	sample := int(math.Round(30 * scale))
-	thick := max(2, int(math.Round(3*scale)))
-	lineH := face.Metrics().Height.Ceil() + pad/2
-	bar := 4 * sample
+	return legendMetrics{
+		pad: pad, sample: sample, thick: max(2, int(math.Round(3*scale))),
+		lineH: face.Metrics().Height.Ceil() + pad/2, bar: 4 * sample,
+	}
+}
+
+// legendSize is the size of the legend's plate.
+func legendSize(entries []entry, face font.Face, scale float64) image.Point {
+	m := metricsFor(face, scale)
 	width, rows := 0, 0
 	for _, e := range entries {
 		if e.ramp != nil {
 			ends := font.MeasureString(face, e.ramp.low).Ceil() + font.MeasureString(face, e.ramp.high).Ceil()
-			width = max(width, font.MeasureString(face, e.name).Ceil()-sample-pad, bar+ends+2*pad-sample-pad)
+			width = max(width, font.MeasureString(face, e.name).Ceil()-m.sample-m.pad, m.bar+ends+2*m.pad-m.sample-m.pad)
 			rows += 2
 			continue
 		}
 		width = max(width, font.MeasureString(face, render.Visual(e.name)).Ceil())
 		rows++
 	}
-	plate := image.Rect(pad, pad, pad+2*pad+sample+pad+width, pad+2*pad+lineH*rows).Intersect(img.Bounds())
+	return image.Pt(2*m.pad+m.sample+m.pad+width, 2*m.pad+m.lineH*rows)
+}
+
+// legendCorners are where --legend may put the legend, in the order auto
+// prefers them when two are as clear as each other: top left first, where a
+// legend is looked for.
+var legendCorners = []string{"top-left", "top-right", "bottom-left", "bottom-right"}
+
+// legendPlate is where a legend of size goes in bounds, in corner, margin in
+// from the edges. In the bottom right it stands above the map's credit, which
+// is drawn there, credit pixels tall; a legend is never drawn over the credit
+// the licence asks for.
+func legendPlate(bounds image.Rectangle, size image.Point, corner string, margin, credit int) image.Rectangle {
+	x := bounds.Min.X + margin
+	if corner == "top-right" || corner == "bottom-right" {
+		x = bounds.Max.X - margin - size.X
+	}
+	y := bounds.Min.Y + margin
+	switch corner {
+	case "bottom-left":
+		y = bounds.Max.Y - margin - size.Y
+	case "bottom-right":
+		y = bounds.Max.Y - margin - credit - size.Y
+	}
+	return image.Rectangle{Min: image.Pt(x, y), Max: image.Pt(x+size.X, y+size.Y)}.Intersect(bounds)
+}
+
+// creditSpace is how far up from the bottom edge a legend in the bottom right
+// has to stand to clear the map's credit, with margin between them: the
+// credit's plate is its text's height and 8 pixels, as render.DrawCredit
+// draws it. A map with no credit to show leaves the corner free.
+func creditSpace(credit string, face font.Face, margin int) int {
+	if render.PlainCredit(credit) == "" {
+		return 0
+	}
+	return face.Metrics().Height.Ceil() + 8 + margin
+}
+
+// quietestCorner is the corner where a legend of size would cover least of
+// what is drawn in overlay -- a picture of the course, its markers, labels
+// and references alone, on nothing: the pixels there are what a legend would
+// hide. Ties go to the earlier corner in legendCorners.
+func quietestCorner(overlay *image.RGBA, size image.Point, margin, credit int) string {
+	best, least := legendCorners[0], -1
+	for _, corner := range legendCorners {
+		r := legendPlate(overlay.Bounds(), size, corner, margin, credit)
+		n := 0
+		for y := r.Min.Y; y < r.Max.Y; y++ {
+			for x := r.Min.X; x < r.Max.X; x++ {
+				if overlay.RGBAAt(x, y).A > 0 {
+					n++
+				}
+			}
+		}
+		if least < 0 || n < least {
+			best, least = corner, n
+		}
+	}
+	return best
+}
+
+// drawLegend writes a legend into the picture at plate, on a plate like the
+// credit's, so it reads over any map: a short sample of each line, solid or
+// dashed in its ink, and its name beside it.
+//
+// It is there because a dashed line on a map with nothing saying what it is
+// invites the wrong reading -- a detour, a gap in the recording -- and with
+// several references there is no other way to tell them apart.
+func drawLegend(img *image.RGBA, entries []entry, face font.Face, scale float64, plate image.Rectangle) {
+	if face == nil || len(entries) == 0 {
+		return
+	}
+	m := metricsFor(face, scale)
+	pad, sample, thick, lineH, bar := m.pad, m.sample, m.thick, m.lineH, m.bar
 	draw.Draw(img, plate, image.NewUniform(color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xdd}), image.Point{}, draw.Over)
 
 	ink := image.NewUniform(color.RGBA{R: 0x11, G: 0x11, B: 0x11, A: 0xff})

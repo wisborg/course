@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -44,6 +45,8 @@ var mapOpts struct {
 	colour        string
 	gradeCap      float64
 	power         string
+	legend        string
+	title         string
 }
 
 var mapCmd = &cobra.Command{
@@ -84,6 +87,8 @@ func init() {
 	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
+	f.StringVar(&mapOpts.legend, "legend", "auto", "where the legend goes: top-left, top-right, bottom-left or bottom-right; auto for whichever of them covers least of the course; none for no legend")
+	f.StringVar(&mapOpts.title, "title", "", "what the legend calls the course (default: its file's name)")
 	f.StringVar(&mapOpts.colour, "colour", "", "colour the course by a metric along it: pace, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power or cadence")
 	f.StringVar(&mapOpts.power, "power-source", "auto", "with --colour power, which power reading when the file carries both a footpod's (Stryd) developer field and the standard FIT power field -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; the two can disagree, being different sensors")
 	f.Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
@@ -116,6 +121,13 @@ func runMap(cmd *cobra.Command, args []string) error {
 		metric: mapOpts.colour, compare: mapOpts.compare,
 		gradeCap: mapOpts.gradeCap, gradeCapGiven: cmd.Flags().Changed("grade-cap"),
 		power: mapOpts.power, powerGiven: cmd.Flags().Changed("power-source"),
+	}
+	if !slices.Contains(append([]string{"auto", "none"}, legendCorners...), mapOpts.legend) {
+		return fmt.Errorf("--legend %q: use %s, auto or none", mapOpts.legend, strings.Join(legendCorners, ", "))
+	}
+	name := nameOf(args[0])
+	if mapOpts.title != "" {
+		name = mapOpts.title
 	}
 	if err := checkColour(c, colours); err != nil {
 		return err
@@ -162,9 +174,9 @@ func runMap(cmd *cobra.Command, args []string) error {
 	var col *colouring
 	switch {
 	case mapOpts.compare != "":
-		col, err = compareWith(c, nameOf(args[0]), mapOpts.compare, scale)
+		col, err = compareWith(c, name, mapOpts.compare, scale)
 	case mapOpts.colour != "":
-		col, err = colourBy(c, nameOf(args[0]), colours, scale)
+		col, err = colourBy(c, name, colours, scale)
 	}
 	if err != nil {
 		return err
@@ -185,10 +197,13 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
 	}
-	if len(refs) > 0 || col != nil {
+	// A legend is drawn when there is more than the course to tell apart,
+	// or when one was asked for by name or place; never with --legend none.
+	asked := mapOpts.title != "" || (mapOpts.legend != "auto" && mapOpts.legend != "none")
+	if (len(refs) > 0 || col != nil || asked) && mapOpts.legend != "none" {
 		var legend []entry
 		if col == nil {
-			legend = append(legend, entry{name: nameOf(args[0]), ink: inks.Route})
+			legend = append(legend, entry{name: name, ink: inks.Route})
 		} else {
 			legend = append(legend, entry{name: col.legend, ramp: &col.ramp})
 		}
@@ -202,7 +217,19 @@ func runMap(cmd *cobra.Command, args []string) error {
 			}
 			legend = append(legend, entry{name: name, ink: refInks[i%len(refInks)], dashed: true})
 		}
-		drawLegend(img, legend, face, scale)
+		size, margin := legendSize(legend, face, scale), metricsFor(face, scale).pad
+		credit := creditSpace(manifest.Attribution, face, margin)
+		corner := mapOpts.legend
+		if corner == "auto" {
+			// What the legend would hide: the course, its markers and
+			// labels and references, drawn again on nothing.
+			bare := image.NewRGBA(img.Bounds())
+			if err := render.Draw(bare, view, drawing, face); err != nil {
+				return err
+			}
+			corner = quietestCorner(bare, size, margin, credit)
+		}
+		drawLegend(img, legend, face, scale, legendPlate(img.Bounds(), size, corner, margin, credit))
 	}
 	render.DrawCredit(img, manifest.Attribution, face)
 	if err := writePNG(out, img); err != nil {
