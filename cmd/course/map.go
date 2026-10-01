@@ -39,7 +39,7 @@ var mapOpts struct {
 	language      string
 	fonts         []string
 	references    []string
-	greatCircle   bool
+	greatCircle   string
 	whole         bool
 	compare       string
 	colour        string
@@ -96,7 +96,8 @@ func init() {
 	f.Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
 	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
 	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
-	f.BoolVar(&mapOpts.greatCircle, "great-circle", false, "draw the great circle between the course's start and finish, dashed: the shortest way over the globe")
+	f.StringVar(&mapOpts.greatCircle, "great-circle", "", "draw the great circle, dashed -- the shortest way over the globe -- between the course's start and finish (overall, as plain --great-circle does), each file's (--great-circle=each), or both (--great-circle=both)")
+	f.Lookup("great-circle").NoOptDefVal = "overall"
 	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
 }
@@ -159,10 +160,28 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if out == "" {
 		out = nameOf(args[0]) + ".png"
 	}
-	refs, err := loadReferences(c, mapOpts.references, mapOpts.greatCircle, !mapOpts.whole)
+	legs := activities
+	if !mapOpts.separate && len(args) > 1 && (mapOpts.greatCircle == "each" || mapOpts.greatCircle == "both") {
+		// Merged, the files are still the legs a great circle is drawn
+		// for each of.
+		legs = nil
+		for _, a := range args {
+			one, err := course.Read(a)
+			if err != nil {
+				return err
+			}
+			legs = append(legs, one)
+		}
+	}
+	gcs, err := greatCircles(c, legs, mapOpts.greatCircle)
 	if err != nil {
 		return err
 	}
+	refs, err := loadReferences(c, mapOpts.references, !mapOpts.whole)
+	if err != nil {
+		return err
+	}
+	refs = append(refs, gcs...)
 
 	view, cropped := render.Fit(extent(c, refs), mapOpts.width, mapOpts.height, maxMapZoom)
 	errw := cmd.ErrOrStderr()
@@ -315,7 +334,7 @@ func nameOf(path string) string {
 // When apart is set, a reference the course followed is drawn only where the
 // two part; one it did not follow is drawn whole, since all of it is
 // different.
-func loadReferences(c *course.Course, names []string, greatCircle, apart bool) ([]routemap.Reference, error) {
+func loadReferences(c *course.Course, names []string, apart bool) ([]routemap.Reference, error) {
 	var refs []routemap.Reference
 	for _, n := range names {
 		if n == "auto" {
@@ -338,14 +357,41 @@ func loadReferences(c *course.Course, names []string, greatCircle, apart bool) (
 		}
 		refs = append(refs, r)
 	}
-	if greatCircle {
-		gc, ok := routemap.GreatCircle(c)
-		if !ok {
-			return nil, errors.New("--great-circle: the course ends where it started, and has no great circle")
-		}
-		refs = append(refs, gc)
-	}
 	return refs, nil
+}
+
+// greatCircles are the great circles --great-circle asks for: overall, the
+// one from the course's start to its finish; each, one for each leg -- each
+// file, two flights' two great circles rather than one from the first
+// take-off to the last landing; both, all of them. A leg that ends where it
+// started has none and is passed over; asking for great circles and getting
+// none at all is refused, rather than drawing a map without what was asked
+// for. One leg is the whole course, and its great circle is drawn once.
+func greatCircles(c *course.Course, legs []*course.Course, mode string) ([]routemap.Reference, error) {
+	if mode == "" {
+		return nil, nil
+	}
+	if mode != "overall" && mode != "each" && mode != "both" {
+		return nil, fmt.Errorf("--great-circle=%s: use overall, each or both", mode)
+	}
+	var out []routemap.Reference
+	if mode != "each" || len(legs) < 2 {
+		if gc, ok := routemap.GreatCircle(c); ok {
+			out = append(out, gc)
+		}
+	}
+	if mode != "overall" && len(legs) > 1 {
+		for i, l := range legs {
+			if gc, ok := routemap.GreatCircle(l); ok {
+				gc.Name = fmt.Sprintf("Great circle %d", i+1)
+				out = append(out, gc)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("--great-circle: the course ends where it started, and has no great circle")
+	}
+	return out, nil
 }
 
 // colouring is a course coloured by a value along it -- its pace, its

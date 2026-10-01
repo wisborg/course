@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -296,7 +297,7 @@ func TestMapDrawsAFollowedReferenceWhereItParts(t *testing.T) {
 	// The run matches the reference, with one stretch apart -- so what is
 	// drawn below is that departure, not a reference drawn whole for want
 	// of a match.
-	refs, err := loadReferences(mustRead(t, run1), []string{ref}, false, true)
+	refs, err := loadReferences(mustRead(t, run1), []string{ref}, true)
 	if err != nil || len(refs) != 1 || !refs[0].Follows || len(refs[0].Apart) != 1 {
 		t.Fatalf("the reference as loaded: %v, %+v", err, refs)
 	}
@@ -362,5 +363,48 @@ func TestExtentHoldsWhatIsDrawn(t *testing.T) {
 	}
 	if got := extent(c, []routemap.Reference{{Points: far}}); got.North < 11 {
 		t.Errorf("with the reference drawn whole, the extent %+v does not reach it", got)
+	}
+}
+
+// --great-circle draws the whole course's great circle, or each leg's, or
+// both; one leg is the whole course and drawn once; a leg that ends where
+// it started has none and is passed over; and none at all is refused.
+func TestGreatCircles(t *testing.T) {
+	leg := func(lat0, lon0, lat1, lon1 float64) *course.Course {
+		return &course.Course{Points: []course.Point{{Lat: lat0, Lon: lon0}, {Lat: lat1, Lon: lon1}}}
+	}
+	sydBkk, bkkCph := leg(-34, 151, 14, 100), leg(14, 100, 56, 12)
+	whole := leg(-34, 151, 56, 12)
+	loop := leg(10, 20, 10, 20)
+	names := func(rs []routemap.Reference) []string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.Name)
+		}
+		return out
+	}
+	for _, c := range []struct {
+		mode string
+		legs []*course.Course
+		want []string
+	}{
+		{"", []*course.Course{sydBkk, bkkCph}, nil},
+		{"overall", []*course.Course{sydBkk, bkkCph}, []string{"Great circle"}},
+		{"each", []*course.Course{sydBkk, bkkCph}, []string{"Great circle 1", "Great circle 2"}},
+		{"both", []*course.Course{sydBkk, bkkCph}, []string{"Great circle", "Great circle 1", "Great circle 2"}},
+		{"each", []*course.Course{whole}, []string{"Great circle"}},
+		{"both", []*course.Course{whole}, []string{"Great circle"}},
+		{"each", []*course.Course{sydBkk, loop, bkkCph}, []string{"Great circle 1", "Great circle 3"}},
+	} {
+		got, err := greatCircles(whole, c.legs, c.mode)
+		if err != nil || !slices.Equal(names(got), c.want) {
+			t.Errorf("--great-circle=%s over %d legs: %v %v, want %v", c.mode, len(c.legs), names(got), err, c.want)
+		}
+	}
+	if _, err := greatCircles(loop, []*course.Course{loop}, "each"); err == nil || !strings.Contains(err.Error(), "no great circle") {
+		t.Errorf("a loop's great circle: %v", err)
+	}
+	if _, err := greatCircles(whole, nil, "sometimes"); err == nil || !strings.Contains(err.Error(), "use overall, each or both") {
+		t.Errorf("--great-circle=sometimes: %v", err)
 	}
 }

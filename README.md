@@ -173,12 +173,19 @@ rather than drawn in one colour.
 ```
 ./course map run.fit --reference other-run.fit --reference official-course.gpx
 ./course map flight.kml --great-circle
+./course map --separate leg1.kml leg2.kml --great-circle=both
 ```
 
 `--reference` draws another course beside this one for comparison -- any file `course` reads,
 repeatable -- and `--great-circle` the shortest way over the globe between the course's start
 and finish. Each is dashed, under the course, in a colour of its own, and a legend says which
 line is which. The view holds the course and all of them.
+
+With several files, `--great-circle` (or `--great-circle=overall`) is the great circle from the
+first start to the last finish, `--great-circle=each` one for each file -- each flight of a
+journey against its own shortest way -- and `--great-circle=both` all of them; whether the
+files are merged or `--separate`. The value is joined with `=`: after a space it would be
+taken for another file.
 
 A reference the course followed is drawn only where the two part -- a closed bridge, a
 detour, the stretch a late-started watch never saw -- so the map is not buried under a

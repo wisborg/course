@@ -255,6 +255,17 @@ func TestMapSeparate(t *testing.T) {
 		t.Error("merged: part of the course is in the second activity ink")
 	}
 
+	// Merged, the two files are still two legs, each with its great
+	// circle: the second is in the second reference ink, which a single
+	// great circle over the whole course would not be.
+	second2 := routemap.ReferenceInks(palette)[1]
+	if img := draw("--great-circle=each"); !hasColour(img, [3]uint8{second2.R, second2.G, second2.B}, 0, 1200, 0, 900) {
+		t.Error("--great-circle=each over two merged files: no second great circle")
+	}
+	if img := draw("--great-circle"); hasColour(img, [3]uint8{second2.R, second2.G, second2.B}, 0, 1200, 0, 900) {
+		t.Error("plain --great-circle over two merged files: more than the one great circle")
+	}
+
 	fit := filepath.Join(dir, "run.fit")
 	opts := fittest.DefaultOptions()
 	opts.Count = 300
