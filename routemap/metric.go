@@ -4,7 +4,6 @@ import (
 	"image/color"
 	"math"
 	"sort"
-	"strings"
 
 	"github.com/wisborg/fitactivity"
 	"github.com/wisborg/osmbase/render"
@@ -149,19 +148,13 @@ func Power(c *course.Course, src fitactivity.PowerSource) []float64 {
 }
 
 // Cadence is each point's cadence in the unit its sport is counted in, and
-// the unit: steps a minute for running, walking and hiking, where a FIT file
-// counts one leg and the number a runner knows is twice it; revolutions a
-// minute otherwise, as recorded. An unknown sport is left in revolutions a
-// minute: the recorded number under its recorded unit cannot be wrong, where
-// a guessed doubling would halve or double somebody's cadence. The same
-// rule as fitdash's cadence readout. NaN where the recording had none; a
+// the unit, by fitactivity.CadenceUnit -- the rule videofx and fitdash show
+// cadence by too: steps a minute for running, walking and hiking, where a
+// FIT file counts one leg; revolutions a minute, as recorded, for any other
+// sport, an unknown one included. NaN where the recording had none; a
 // recorded 0, standing still, is 0.
 func Cadence(c *course.Course) ([]float64, string) {
-	factor, unit := 1.0, "rpm"
-	switch strings.ToLower(c.Sport) {
-	case "running", "walking", "hiking":
-		factor, unit = 2, "spm"
-	}
+	factor, unit := fitactivity.CadenceUnit(c.Sport)
 	out := make([]float64, len(c.Points))
 	for i, p := range c.Points {
 		out[i] = math.NaN()
