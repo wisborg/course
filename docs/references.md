@@ -135,8 +135,14 @@ was tried and buried the course under them. Neither is good enough: the lines hi
 beneath them -- the paths, the names -- and a reference that follows the course is only a
 coloured edge. To try later:
 
-- **Lighter lines altogether**: thinner and translucent strokes, lighter halos, so the map
-  shows through.
+- **Lighter lines altogether** -- built. Six styles were drawn side by side on a city run
+  and on two Rhodes parkruns that share most of their course: today's 4 px line with an
+  opaque 2 px halo, thinner opaque lines with and without a halo or with a faint one, a
+  hairline, and translucent lines. Translucent and thin, without a halo, hid least while
+  still reading as the route, and became the default. But where a reference is drawn whole
+  over the course, two translucent lines mixed into one muddy brown, so a map with a
+  reference drawn whole draws every line thin, opaque and with a slim halo instead. Markers
+  and coloured lines are unchanged.
 - **A reference drawn only where it leaves the course** -- now built, and the default. A
   reference the course matched is drawn only over the stretches matching reports as missed
   (more than `--near` from the course for at least 10 s, or 20 m untimed), each reaching

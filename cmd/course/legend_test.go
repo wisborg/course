@@ -246,7 +246,7 @@ func TestMapSeparate(t *testing.T) {
 	}
 	inSecond := func(img image.Image) bool {
 		// Right of the legend, which has a sample of every ink.
-		return hasColour(img, [3]uint8{second.R, second.G, second.B}, 200, 1200, 0, 900)
+		return hasColour(img, onGround(second), 200, 1200, 0, 900)
 	}
 	if img := draw("--separate", "--title", "One", "--title", "Two"); !inSecond(img) {
 		t.Error("--separate: the second activity is not in the second activity ink")

@@ -240,6 +240,16 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	refInks := routemap.ReferenceInks(palette)
 	drawing = routemap.WithReferences(drawing, refs, refInks, inks.Halo, scale)
+	// Light lines, so the map shows through them; but solid when a
+	// reference is drawn whole beside the course, where two translucent
+	// lines over one another would mix into one muddy one.
+	style := routemap.Light
+	for _, r := range refs {
+		if !r.Follows {
+			style = routemap.Solid
+		}
+	}
+	drawing = routemap.Styled(drawing, style)
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
 	}

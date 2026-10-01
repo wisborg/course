@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -157,12 +158,15 @@ func TestMapWithReferences(t *testing.T) {
 }
 
 // anyInk reports whether any pixel in r is the light palette's first
-// reference ink, within a little for antialiasing.
+// reference ink, solid or drawn light over the blank ground, within a little
+// for antialiasing.
 func anyInk(img image.Image, r image.Rectangle) bool {
 	for y := r.Min.Y; y < r.Max.Y; y++ {
 		for x := r.Min.X; x < r.Max.X; x++ {
 			cr, cg, cb, _ := img.At(x, y).RGBA()
-			if near(cr>>8, 0xC2) && near(cg>>8, 0x18) && near(cb>>8, 0x5B) {
+			light := onGround(color.RGBA{R: 0xC2, G: 0x18, B: 0x5B, A: 0xff})
+			if near(cr>>8, 0xC2) && near(cg>>8, 0x18) && near(cb>>8, 0x5B) ||
+				near(cr>>8, uint32(light[0])) && near(cg>>8, uint32(light[1])) && near(cb>>8, uint32(light[2])) {
 				return true
 			}
 		}
@@ -406,5 +410,58 @@ func TestGreatCircles(t *testing.T) {
 	}
 	if _, err := greatCircles(whole, nil, "sometimes"); err == nil || !strings.Contains(err.Error(), "use overall, each or both") {
 		t.Errorf("--great-circle=sometimes: %v", err)
+	}
+}
+
+// onGround is the colour a Light line of ink c comes out over the light
+// palette's blank ground, as the tests' maps have no tiles: the ink as
+// routemap.Styled makes it, composited over the background.
+func onGround(c color.RGBA) [3]uint8 {
+	d := routemap.Styled(render.Drawing{Lines: []render.Line{{Ink: c}}}, routemap.Light)
+	ink, bg := d.Lines[0].Ink, render.LightPalette().Background
+	over := func(i, b uint8) uint8 {
+		return uint8(float64(i) + float64(b)*(1-float64(ink.A)/255) + 0.5)
+	}
+	return [3]uint8{over(ink.R, bg.R), over(ink.G, bg.G), over(ink.B, bg.B)}
+}
+
+// A course is drawn light, its ink translucent over the map; with a
+// reference drawn whole beside it, solid, so the two do not mix.
+func TestMapLineStyle(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	run1, far, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "far.gpx"), filepath.Join(dir, "run.png")
+	writeLine(t, run1, 10, 20, 0.0002, 50)
+	writeLine(t, far, 10.01, 20, 0.0002, 50) // a kilometre north: never followed, so drawn whole
+	route := routemap.InksFor(render.LightPalette(), render.LightOverlay()).Route
+	solid := [3]uint8{route.R, route.G, route.B}
+	draw := func(args ...string) image.Image {
+		t.Helper()
+		resetNow(mapCmd)
+		all := append([]string{"map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "1200", "--height", "900"}, args...)
+		if o, err := run(t, append(all, run1)...); err != nil {
+			t.Fatalf("map %v: %v\n%s", args, err, o)
+		}
+		f, err := os.Open(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		img, err := png.Decode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return img
+	}
+	img := draw()
+	if !hasColour(img, onGround(route), 200, 1000, 100, 900) || hasColour(img, solid, 200, 1000, 100, 900) {
+		t.Error("a lone course is not drawn light")
+	}
+	img = draw("--reference", far)
+	if !hasColour(img, solid, 200, 1000, 100, 900) {
+		t.Error("beside a reference drawn whole, the course is not drawn solid")
 	}
 }

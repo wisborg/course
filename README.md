@@ -59,6 +59,11 @@ so many kilometres where the file recorded distance. A stretch the recording has
 for -- a tunnel, a flight over an ocean -- is dashed, because the straight line across it is
 not where the course went. The picture carries the map data's credit in its corner.
 
+The course is drawn thin and translucent, without a halo, so the streets, paths and names
+under it show through. Where a reference is drawn whole beside it (see below), the lines are
+drawn opaque instead, with a slim halo: two translucent lines over one another mix into a
+third colour, and which is which is lost.
+
 Names are written in the built-in Go font, and letters it lacks -- Thai, Indian scripts,
 Chinese, Arabic -- in the first of the fonts given with `--font`, then of the common system
 fonts this machine has (Arial Unicode and Apple's script fonts on macOS, Noto on Linux),

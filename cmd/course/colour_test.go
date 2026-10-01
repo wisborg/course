@@ -161,8 +161,9 @@ func TestMapCompareGreysWhatIsNotCompared(t *testing.T) {
 			is := func(c [3]uint8) bool {
 				return near(r>>8, uint32(c[0])) && near(g>>8, uint32(c[1])) && near(b>>8, uint32(c[2]))
 			}
-			grey = grey || is([3]uint8{inks.Gap.R, inks.Gap.G, inks.Gap.B})
-			own = own || is([3]uint8{inks.Route.R, inks.Route.G, inks.Route.B})
+			// The lines are drawn light, translucent over the ground.
+			grey = grey || is(onGround(inks.Gap))
+			own = own || is(onGround(inks.Route))
 		}
 	}
 	if !grey || own {
