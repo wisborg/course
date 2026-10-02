@@ -21,15 +21,19 @@ func TestMapStyleLayers(t *testing.T) {
 	t.Cleanup(func() { styleOpts.file, styleOpts.sets = "", nil })
 	dir := t.TempDir()
 	theme := filepath.Join(dir, "theme.yaml")
-	writeFile(t, theme, "palette: dark\ncourse:\n  colour: '#d32f2f'\n  width: 5\nreference:\n  style: dotted\n")
 
-	out, err := run(t, "map", "style", "--style", theme, "--palette", "light", "--set", "course.width=7", "--set", "references.Loop.colour=#0077aa")
+	writeFile(t, theme, "palette: dark\nwidth: 2000\nheight: 2000\ncourse:\n  colour: '#d32f2f'\n  width: 5\nreference:\n  style: dotted\n")
+	out, err := run(t, "map", "style", "--style", theme, "--palette", "light", "--width", "800", "--set", "course.width=7", "--set", "references.Loop.colour=#0077aa")
 	if err != nil {
 		t.Fatalf("map style: %v\n%s", err, out)
 	}
 	st := mapstyle.Default()
 	if err := st.Read(strings.NewReader(out)); err != nil {
 		t.Fatalf("what map style printed does not read back: %v\n%s", err, out)
+	}
+	// --width over the file's, the file's height kept.
+	if st.Width != 800 || st.Height != 2000 {
+		t.Errorf("size %d by %d, want 800 by 2000", st.Width, st.Height)
 	}
 	if st.Palette != "light" || st.Course.Colour != "#d32f2f" || *st.Course.Width != 7 || st.Reference.Style != "dotted" || st.References["Loop"].Colour != "#0077aa" || *st.Reference.Width != 2.25 {
 		t.Errorf("layered style %+v", st)
@@ -48,6 +52,7 @@ func TestMapStyleLayers(t *testing.T) {
 		{[]string{"map", "style", "--set", "course.colour=red"}, "course.colour"},
 		{[]string{"map", "style", "--style", filepath.Join(dir, "missing.yaml")}, "missing.yaml"},
 		{[]string{"map", "style", "--palette", "sepia"}, "palette"},
+		{[]string{"map", "style", "--width", "20"}, "width: 20 pixels is too small"},
 	} {
 		resetNow(mapStyleCmd)
 		resetNow(mapCmd)
@@ -153,5 +158,30 @@ func TestMapDrawsInItsStyle(t *testing.T) {
 	}
 	if !hasColour(img, [3]uint8{0x00, 0xc8, 0x53}, 100, 700, 100, 600) {
 		t.Error("the course is not in the colour set")
+	}
+}
+
+// The picture is the size the style says: --set width and height make it,
+// as --width and --height do.
+func TestMapIsTheSizeOfItsStyle(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+	t.Cleanup(func() { styleOpts.file, styleOpts.sets = "", nil })
+
+	dir := t.TempDir()
+	run1, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "run.png")
+	writeLine(t, run1, 10, 20, 0.0002, 50)
+	if o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", out, "--set", "width=320", "--set", "height=200", run1); err != nil {
+		t.Fatalf("map: %v\n%s", err, o)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := png.DecodeConfig(f)
+	f.Close()
+	if err != nil || cfg.Width != 320 || cfg.Height != 200 {
+		t.Errorf("the picture is %d by %d, %v; want 320 by 200", cfg.Width, cfg.Height, err)
 	}
 }

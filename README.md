@@ -75,8 +75,8 @@ The system fonts are read on this machine and never copied anywhere.
 
 ### Map styles
 
-How a map looks -- its palette, and the colour, width, opacity and style of its lines -- is a
-style, made in three layers, each changing only what it says: the built-in defaults, then a
+How a map looks -- its palette, its size, and the colour, width, opacity and style of its
+lines -- is a style, made in three layers, each changing only what it says: the built-in defaults, then a
 style file given with `--style`, then single settings given with `--set`. The file is YAML,
 and so may be JSON.
 
@@ -92,6 +92,8 @@ brings it up to the settings there are now.
 
 ```yaml
 palette: dark            # light or dark; --palette is the same as --set palette=...
+width: 1920              # the picture, in pixels; --width and --height are the same
+height: 1080             #   as --set width=... and --set height=...
 course:                  # the course, and with --separate every activity
   colour: "#ff5252"      # #rrggbb or #rrggbbaa, or auto for the palette's own
   colours: []            # with --separate, the 2nd, 3rd, ... activities' colours

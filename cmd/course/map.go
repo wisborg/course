@@ -79,8 +79,8 @@ data's licence asks of anything drawn from it.`,
 func init() {
 	f := mapCmd.Flags()
 	f.StringVar(&mapOpts.out, "out", "", "the PNG to write (default: the course's name with .png, in this directory)")
-	f.IntVar(&mapOpts.width, "width", 1600, "the picture's width in pixels")
-	f.IntVar(&mapOpts.height, "height", 1000, "the picture's height in pixels")
+	mapCmd.PersistentFlags().IntVar(&mapOpts.width, "width", 1600, "the picture's width in pixels; the same as --set width=..., and before any --set")
+	mapCmd.PersistentFlags().IntVar(&mapOpts.height, "height", 1000, "the picture's height in pixels; the same as --set height=..., and before any --set")
 	mapCmd.PersistentFlags().StringVar(&mapOpts.palette, "palette", "light", "the map's colours: light or dark; the same as --set palette=..., and before any --set")
 	f.StringVar(&mapOpts.store, "store", "", "the osmbase store to draw from (default: osmbase's own)")
 	f.StringVar(&mapOpts.archive, "archive", "", "which archive in the store, when it holds several")
@@ -110,9 +110,6 @@ func runMap(cmd *cobra.Command, args []string) error {
 	palette, overlay, err := paletteNamed(st.Palette)
 	if err != nil {
 		return err
-	}
-	if mapOpts.width < 64 || mapOpts.height < 64 {
-		return fmt.Errorf("a map of %d by %d pixels is too small to draw a course on", mapOpts.width, mapOpts.height)
 	}
 	if err := loadFonts(mapOpts.fonts); err != nil {
 		return err
@@ -187,7 +184,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	refs = append(refs, gcs...)
 
-	view, cropped := render.Fit(extent(c, refs), mapOpts.width, mapOpts.height, maxMapZoom)
+	view, cropped := render.Fit(extent(c, refs), st.Width, st.Height, maxMapZoom)
 	errw := cmd.ErrOrStderr()
 	if cropped {
 		fmt.Fprintf(errw, "course: the course is wider than the map at this size; it is drawn cropped\n")

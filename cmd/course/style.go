@@ -26,7 +26,7 @@ var mapStyleCmd = &cobra.Command{
 	Use:   "style",
 	Short: "Print the style a map would be drawn in, every setting with a comment",
 	Long: `style prints, as YAML, the style course map draws in with the same --style,
---set and --palette: the built-in defaults, then the file's settings over
+--set, --palette, --width and --height: the built-in defaults, then the file's settings over
 them, then the command line's. Every setting is there, with a comment saying
 what it takes, so
 
@@ -57,8 +57,9 @@ func init() {
 }
 
 // buildStyle is the style the flags make: the defaults, the --style file
-// over them, then the command line -- --palette, which is the same as
-// --set palette=..., and then every --set in turn -- and checked.
+// over them, then the command line -- --palette, --width and --height, which
+// are the same as --set palette=... and so on, and then every --set in turn
+// -- and checked.
 func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	st := mapstyle.Default()
 	if styleOpts.file != "" {
@@ -68,6 +69,12 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	}
 	if cmd.Flags().Changed("palette") {
 		st.Palette = mapOpts.palette
+	}
+	if cmd.Flags().Changed("width") {
+		st.Width = mapOpts.width
+	}
+	if cmd.Flags().Changed("height") {
+		st.Height = mapOpts.height
 	}
 	for _, s := range styleOpts.sets {
 		if err := st.Set(s); err != nil {

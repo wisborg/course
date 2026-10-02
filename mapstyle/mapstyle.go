@@ -31,6 +31,11 @@ import (
 type Style struct {
 	// Palette is the map's: light or dark.
 	Palette string `yaml:"palette"`
+	// Width and Height are the picture's, in pixels. Everything drawn on
+	// it is scaled with it, so a style's line widths look the same at any
+	// size.
+	Width  int `yaml:"width"`
+	Height int `yaml:"height"`
 	// Course is how the course is drawn, and with --separate every
 	// activity, unless Activities says otherwise for one.
 	Course Line `yaml:"course"`
@@ -74,6 +79,8 @@ func ptr(v float64) *float64 { return &v }
 func Default() Style {
 	return Style{
 		Palette:    "light",
+		Width:      1600,
+		Height:     1000,
 		Course:     Line{Colour: "auto", Colours: []string{}, Width: ptr(3), Opacity: "auto", Style: "solid"},
 		Activities: []Line{},
 		Reference:  Line{Colour: "auto", Colours: []string{}, Width: ptr(2.25), Opacity: "auto", Style: "dashed"},
@@ -204,7 +211,7 @@ func (s *Style) Set(setting string) error {
 var bareColour = regexp.MustCompile(`(^|[\[,\s])(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)\b`)
 
 var (
-	topKeys  = []string{"palette", "course", "activities", "reference", "references"}
+	topKeys  = []string{"palette", "width", "height", "course", "activities", "reference", "references"}
 	lineKeys = []string{"colour", "colours", "width", "opacity", "style"}
 )
 
@@ -219,9 +226,9 @@ func checkPath(keys []string) error {
 	}
 	var line []string // the keys that name a setting of a line
 	switch keys[0] {
-	case "palette":
+	case "palette", "width", "height":
 		if len(keys) > 1 {
-			return errors.New("palette is one setting, light or dark")
+			return fmt.Errorf("%s is one setting, not a group of them", keys[0])
 		}
 		return nil
 	case "course", "reference":
@@ -278,6 +285,15 @@ var hexColour = regexp.MustCompile(`^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
 func (s Style) Validate() error {
 	if !slices.Contains(Palettes, s.Palette) {
 		return fmt.Errorf("palette: %q is not one; use %s", s.Palette, strings.Join(Palettes, " or "))
+	}
+	// A picture smaller than this has no room for a course and its legend,
+	// let alone a map under them.
+	const smallest = 64
+	if s.Width < smallest {
+		return fmt.Errorf("width: %d pixels is too small to draw a course on; give at least %d", s.Width, smallest)
+	}
+	if s.Height < smallest {
+		return fmt.Errorf("height: %d pixels is too small to draw a course on; give at least %d", s.Height, smallest)
 	}
 	if err := s.Course.check("course", true, true); err != nil {
 		return err
@@ -420,6 +436,8 @@ func comment(n *yaml.Node, path string, autos map[string]string) {
 
 var descriptions = map[string]string{
 	"palette":           "The map's colours: light or dark.",
+	"width":             "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
+	"height":            "The picture's height in pixels.",
 	"course":            "The course, and with --separate every activity unless activities says otherwise.",
 	"course.colour":     "A hex colour, #rrggbb or #rrggbbaa, or auto for the palette's own.\nWith --separate, activity 1's.",
 	"course.colours":    "With --separate, the 2nd, 3rd, ... activities' colours, taken in turn.\nEmpty is the palette's own.",

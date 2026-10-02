@@ -15,6 +15,9 @@ func TestDefault(t *testing.T) {
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if s.Width != 1600 || s.Height != 1000 {
+		t.Errorf("default size %d by %d", s.Width, s.Height)
+	}
 	if s.Palette != "light" || *s.Course.Width != 3 || s.Course.Opacity != "auto" || s.Reference.Style != "dashed" || *s.Reference.Width != 2.25 {
 		t.Errorf("default %+v", s)
 	}
@@ -81,12 +84,14 @@ func TestSet(t *testing.T) {
 		"references.run.v2.style=dotted",
 		"palette=dark",
 		"palette=light",
+		"width=4800",
+		"height=3000",
 	} {
 		if err := s.Set(set); err != nil {
 			t.Fatalf("--set %s: %v", set, err)
 		}
 	}
-	if s.Course.Colour != "#d32f2f" || *s.Course.Width != 4.5 || s.Palette != "light" || s.Course.Style != "solid" {
+	if s.Course.Colour != "#d32f2f" || *s.Course.Width != 4.5 || s.Palette != "light" || s.Course.Style != "solid" || s.Width != 4800 || s.Height != 3000 {
 		t.Errorf("course and palette: %+v", s)
 	}
 	if len(s.Reference.Colours) != 2 || s.Reference.Colours[1] != "#445566" {
@@ -108,6 +113,7 @@ func TestSet(t *testing.T) {
 		{"activities.0.width=3", "numbered from 1"},
 		{"activities.two.width=3", "numbered from 1"},
 		{"palette.dark=1", "palette"},
+		{"width.x=1", "width is one setting"},
 	} {
 		s := Default()
 		if err := s.Set(c.set); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -120,6 +126,8 @@ func TestSet(t *testing.T) {
 func TestValidate(t *testing.T) {
 	for _, c := range []struct{ set, want string }{
 		{"palette=sepia", "palette"},
+		{"width=63", "width: 63 pixels is too small"},
+		{"height=0", "height: 0 pixels is too small"},
 		{"course.colour=red", "course.colour"},
 		{"course.colour=#12345", "course.colour"},
 		{"reference.colours=[#123456, blue]", "reference.colours: \"blue\", the 2nd"},
@@ -158,7 +166,7 @@ func TestWrite(t *testing.T) {
 	}
 	out := b.String()
 	for _, want := range []string{
-		"palette: light", "colours: []", "width: 2.25", "style: dashed",
+		"palette: light", "width: 1600", "height: 1000", "# The picture's width in pixels", "colours: []", "width: 2.25", "style: dashed",
 		"# A hex colour", "# solid, dashed or dotted.", "colour: auto # light palette: #1b1b1b",
 		"Loop:", "width: 6",
 	} {
