@@ -30,28 +30,35 @@ func InksFor(p render.Palette, o render.Overlay) Inks {
 	return Inks{Route: o.Foreground, Gap: o.Dim, Start: o.Accent, Finish: o.Highlight, Marker: o.Dim, Halo: p.Background}
 }
 
-// Scale is how big everything is drawn: 1 is sized for a picture about a
-// thousand pixels across.
+// sizes are how big the markers are drawn and the halo round them: 1 is
+// sized for a picture about a thousand pixels across. A line's size is its
+// Look's. line is the width lines were drawn at before they had a Look, and
+// sizes the departure padding still measured against.
 func sizes(scale float64) (line, halo, dot, small float64) {
 	return 4 * scale, 2 * scale, 6 * scale, 3.5 * scale
 }
 
-// Drawing is the course as lines and markers over a picture of v.
-func Drawing(c *course.Course, v render.View, inks Inks, scale float64) render.Drawing {
+// Drawing is the course as lines and markers over a picture of v, its line
+// drawn in look. A gap in the recording is drawn as wide and as opaque, but
+// always dashed and in the gap's ink, so it is never taken for where the
+// course went.
+func Drawing(c *course.Course, v render.View, inks Inks, look Look, scale float64) render.Drawing {
 	if scale <= 0 {
 		scale = 1
 	}
-	line, halo, dot, small := sizes(scale)
+	_, halo, dot, small := sizes(scale)
 	var d render.Drawing
 	if len(c.Points) == 0 {
 		return d
 	}
 	for _, run := range runs(c, v) {
-		l := render.Line{Points: run.points, Ink: inks.Route, Width: line, Halo: halo, HaloInk: inks.Halo}
 		if run.gap {
-			l.Ink, l.Dash = inks.Gap, []float32{float32(3 * line), float32(2 * line)}
+			l := look.line(run.points, inks.Gap, inks.Halo, scale)
+			l.Dash = []float32{float32(3 * l.Width), float32(2 * l.Width)}
+			d.Lines = append(d.Lines, l)
+			continue
 		}
-		d.Lines = append(d.Lines, l)
+		d.Lines = append(d.Lines, look.line(run.points, inks.Route, inks.Halo, scale))
 	}
 
 	for _, m := range DistanceMarkers(c) {

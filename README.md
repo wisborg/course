@@ -73,6 +73,52 @@ shaper for their exact forms and are drawn letter by letter. `--lang en` writes 
 English wherever the map has them, and `map` says when some letters had no font at all.
 The system fonts are read on this machine and never copied anywhere.
 
+### Map styles
+
+How a map looks -- its palette, and the colour, width, opacity and style of its lines -- is a
+style, made in three layers, each changing only what it says: the built-in defaults, then a
+style file given with `--style`, then single settings given with `--set`. The file is YAML,
+and so may be JSON.
+
+```
+./course map style > mytheme.yaml                 # every setting, with what it takes
+./course map run.fit --style mytheme.yaml
+./course map run.fit --style mytheme.yaml --set course.colour=#d32f2f --set reference.style=dotted
+```
+
+`course map style` prints the style the same flags would draw in, every setting with a
+comment, so it starts a theme from the defaults and, given `--style` with an old theme,
+brings it up to the settings there are now.
+
+```yaml
+palette: dark            # light or dark; --palette is the same as --set palette=...
+course:                  # the course, and with --separate every activity
+  colour: "#ff5252"      # #rrggbb or #rrggbbaa, or auto for the palette's own
+  colours: []            # with --separate, the 2nd, 3rd, ... activities' colours
+  width: 4               # pixels on a map 1000 across, scaled with the map
+  opacity: auto          # 0 to 1, or auto: 0.7, but 1 when a reference is drawn whole
+  style: solid           # solid, dashed or dotted
+activities:              # with --separate: settings for activity 1, 2, ... in turn
+  - {}
+  - colour: "#40c4ff"
+reference:               # every reference
+  colour: auto           # one colour for all, or auto to take colours in turn
+  colours: []
+  width: 2.25
+  opacity: auto
+  style: dotted
+references:              # one reference, by its name
+  Rhodes parkrun:
+    colour: "#0077aa"
+```
+
+A setting for one activity or one reference says only what differs from `course` or
+`reference`. On the command line a setting's path is its keys joined by dots, an activity
+numbered from 1 as on the map: `--set activities.2.width=5`,
+`--set 'references.Rhodes parkrun.colour=#0077aa'`, `--set 'reference.colours=[#c2185b, #00695c]'`.
+A colour may be typed without quotes. A setting the style does not have is refused by name,
+in a file as on the command line, so a misspelt one is never silently ignored.
+
 ### Several activities
 
 ```

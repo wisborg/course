@@ -42,8 +42,8 @@ func ActivityInks(p render.Palette, o render.Overlay) []color.RGBA {
 }
 
 // ActivitiesDrawing is several activities on one map: each its own line in
-// its own ink from actInks, its own distance markers, and its start and
-// finish, numbered from 1 in the order given.
+// its own ink from actInks and look from looks, its own distance markers,
+// and its start and finish, numbered from 1 in the order given.
 //
 // Where one activity ends and the next begins -- the run to a parkrun, the
 // parkrun, the run home -- their ends are one place, and a dot and a label
@@ -51,7 +51,7 @@ func ActivityInks(p render.Palette, o render.Overlay) []color.RGBA {
 // So ends within a few pixels of each other are one dot, labelled with all
 // of them in order: "Finish 1 · Start and finish 2 · Start 3". It is the
 // start's ink if anything starts there, and the finish's otherwise.
-func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks []color.RGBA, scale float64) render.Drawing {
+func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks []color.RGBA, looks []Look, scale float64) render.Drawing {
 	if scale <= 0 {
 		scale = 1
 	}
@@ -69,7 +69,7 @@ func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks 
 		}
 		own := inks
 		own.Route = actInks[i%len(actInks)]
-		one := Drawing(a, v, own, scale)
+		one := Drawing(a, v, own, looks[i%len(looks)], scale)
 		d.Lines = append(d.Lines, one.Lines...)
 		// Drawing's last two markers are the finish and the start; the
 		// ends are drawn here instead, together.

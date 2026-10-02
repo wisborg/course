@@ -75,7 +75,7 @@ func TestAGapIsDashed(t *testing.T) {
 		c.Points[i].Elapsed += 10 * time.Minute
 		c.Points[i].Lon += 0.01 // a kilometre on, ten minutes later
 	}
-	d := Drawing(c, view(c), Inks{}, 1)
+	d := Drawing(c, view(c), Inks{}, testLook, 1)
 	var solid, dashed int
 	for _, l := range d.Lines {
 		if len(l.Dash) > 0 {
@@ -92,7 +92,7 @@ func TestAGapIsDashed(t *testing.T) {
 	}
 
 	c.Timed = false
-	d = Drawing(c, view(c), Inks{}, 1)
+	d = Drawing(c, view(c), Inks{}, testLook, 1)
 	if len(d.Lines) != 1 || len(d.Lines[0].Dash) != 0 {
 		t.Errorf("a plan's line is %d lines, dashed %v", len(d.Lines), len(d.Lines) > 0 && len(d.Lines[0].Dash) > 0)
 	}
@@ -104,7 +104,7 @@ func TestAPauseInPlaceIsNotAGap(t *testing.T) {
 	for i := 20; i < len(c.Points); i++ {
 		c.Points[i].Elapsed += 10 * time.Minute
 	}
-	for _, l := range Drawing(c, view(c), Inks{}, 1).Lines {
+	for _, l := range Drawing(c, view(c), Inks{}, testLook, 1).Lines {
 		if len(l.Dash) > 0 {
 			t.Error("a pause in place was dashed as a gap")
 		}
@@ -116,7 +116,7 @@ func TestAPauseInPlaceIsNotAGap(t *testing.T) {
 func TestTheLineIsThinnedToThePicture(t *testing.T) {
 	c := line(5000, 0.000002, time.Second, false) // 1 m apart, 5 km
 	v := view(c)
-	d := Drawing(c, v, Inks{}, 1)
+	d := Drawing(c, v, Inks{}, testLook, 1)
 	if len(d.Lines) != 1 {
 		t.Fatalf("%d lines", len(d.Lines))
 	}
@@ -132,7 +132,7 @@ func TestALoopHasOneLabelAtItsEnds(t *testing.T) {
 	c := line(100, 0.0001, time.Second, false)
 	c.Points = append(c.Points, c.Points[0])
 	var labels []string
-	for _, m := range Drawing(c, view(c), Inks{}, 1).Markers {
+	for _, m := range Drawing(c, view(c), Inks{}, testLook, 1).Markers {
 		if m.Label != "" {
 			labels = append(labels, m.Label)
 		}
@@ -142,7 +142,7 @@ func TestALoopHasOneLabelAtItsEnds(t *testing.T) {
 	}
 	c = line(100, 0.0001, time.Second, false)
 	labels = nil
-	for _, m := range Drawing(c, view(c), Inks{}, 1).Markers {
+	for _, m := range Drawing(c, view(c), Inks{}, testLook, 1).Markers {
 		labels = append(labels, m.Label)
 	}
 	if len(labels) != 2 || labels[1] != "Start" || labels[0] != "Finish" {
@@ -157,7 +157,7 @@ func TestAGapIsLongForItsRecording(t *testing.T) {
 	for i := 20; i < len(c.Points); i++ {
 		c.Points[i].Elapsed += time.Minute // one report 90 s after the last
 	}
-	for _, l := range Drawing(c, view(c), Inks{}, 1).Lines {
+	for _, l := range Drawing(c, view(c), Inks{}, testLook, 1).Lines {
 		if len(l.Dash) > 0 {
 			t.Error("ninety seconds in a thirty-second recording was drawn as a gap")
 		}
@@ -172,3 +172,7 @@ func TestNoMarkerAtTheFinish(t *testing.T) {
 		t.Errorf("markers %+v; want 1 to 4", ms)
 	}
 }
+
+// testLook is a course's look as drawn by default: three pixels, a little
+// translucent, solid.
+var testLook = Look{Width: 3, Opacity: 0.7, Pattern: Solid}

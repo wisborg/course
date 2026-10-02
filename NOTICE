@@ -37,7 +37,8 @@ repository.
                              parserc.go, readerc.go, scannerc.go, writerc.go,
                              yamlh.go, yamlprivateh.go) are MIT and the rest
                              is Apache 2.0.  Reached through output, for
-                             --format yaml.
+                             --format yaml, and used directly to read and
+                             write map styles (course map --style).
 
 
 -------------------------------------------------------------------------------

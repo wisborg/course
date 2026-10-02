@@ -413,16 +413,18 @@ func TestGreatCircles(t *testing.T) {
 	}
 }
 
-// onGround is the colour a Light line of ink c comes out over the light
-// palette's blank ground, as the tests' maps have no tiles: the ink as
-// routemap.Styled makes it, composited over the background.
+// onGround is the colour a line of ink c comes out over the light palette's
+// blank ground, as the tests' maps have no tiles, at the default opacity: the
+// ink at 0.7, premultiplied, composited over the background.
 func onGround(c color.RGBA) [3]uint8 {
-	d := routemap.Styled(render.Drawing{Lines: []render.Line{{Ink: c}}}, routemap.Light)
-	ink, bg := d.Lines[0].Ink, render.LightPalette().Background
+	const a = 0.7
+	bg := render.LightPalette().Background
 	over := func(i, b uint8) uint8 {
-		return uint8(float64(i) + float64(b)*(1-float64(ink.A)/255) + 0.5)
+		ink := float64(uint8(float64(i)*a + 0.5))
+		alpha := float64(uint8(float64(c.A)*a + 0.5))
+		return uint8(ink + float64(b)*(1-alpha/255) + 0.5)
 	}
-	return [3]uint8{over(ink.R, bg.R), over(ink.G, bg.G), over(ink.B, bg.B)}
+	return [3]uint8{over(c.R, bg.R), over(c.G, bg.G), over(c.B, bg.B)}
 }
 
 // A course is drawn light, its ink translucent over the map; with a

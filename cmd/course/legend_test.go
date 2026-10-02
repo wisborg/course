@@ -295,3 +295,34 @@ func TestMapSeparate(t *testing.T) {
 		}
 	}
 }
+
+// A legend's sample of a line is broken as the line is: one run of ink for
+// a solid line, a few for a dashed one, and more, shorter ones for a dotted
+// one.
+func TestLegendSamplesAreBrokenAsTheirLines(t *testing.T) {
+	face := faceAt(baseTextSize)
+	ink := color.RGBA{R: 0xff, A: 0xff}
+	runs := func(p routemap.Pattern) int {
+		entries := []entry{{name: "line", ink: ink, pattern: p}}
+		size := legendSize(entries, face, 1)
+		img := image.NewRGBA(image.Rect(0, 0, size.X+20, size.Y+20))
+		plate := image.Rectangle{Max: size}
+		drawLegend(img, entries, face, 1, plate)
+		m := metricsFor(face, 1)
+		y := plate.Min.Y + m.pad + m.lineH/2
+		n, in := 0, false
+		for x := plate.Min.X; x < plate.Min.X+m.pad+m.sample+2; x++ {
+			r, g, _, _ := img.At(x, y).RGBA()
+			now := r>>8 > 0xc0 && g>>8 < 0x60 // red, not the plate's white
+			if now && !in {
+				n++
+			}
+			in = now
+		}
+		return n
+	}
+	solid, dashed, dotted := runs(routemap.Solid), runs(routemap.Dashed), runs(routemap.Dotted)
+	if solid != 1 || dashed < 2 || dotted <= dashed {
+		t.Errorf("runs of ink: solid %d, dashed %d, dotted %d; want 1, a few, and more", solid, dashed, dotted)
+	}
+}

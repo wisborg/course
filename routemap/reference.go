@@ -118,26 +118,20 @@ func luminance(c color.RGBA) float64 {
 	return (0.2126*float64(c.R) + 0.7152*float64(c.G) + 0.0722*float64(c.B)) / 255
 }
 
-// ReferenceLines are the references as dashed lines, each in its ink, to go
-// under the course: first in a Drawing's lines, so the course is drawn over
-// them. Dashes longer than a gap's, and a little thinner than the course, so
-// neither is taken for the other.
-func ReferenceLines(refs []Reference, inks []color.RGBA, halo color.RGBA, scale float64) []render.Line {
+// ReferenceLines are the references as lines, each in its ink and look
+// from inks and looks in turn, to go under the course: first in a Drawing's
+// lines, so the course is drawn over them.
+func ReferenceLines(refs []Reference, inks []color.RGBA, looks []Look, halo color.RGBA, scale float64) []render.Line {
 	if scale <= 0 {
 		scale = 1
 	}
-	line, h, _, _ := sizes(scale)
-	width := 0.75 * line
 	var out []render.Line
 	for i, r := range refs {
 		for _, piece := range r.Drawn() {
 			if len(piece) < 2 {
 				continue
 			}
-			out = append(out, render.Line{
-				Points: piece, Ink: inks[i%len(inks)], Width: width, Halo: h, HaloInk: halo,
-				Dash: []float32{float32(5 * width), float32(3 * width)},
-			})
+			out = append(out, looks[i%len(looks)].line(piece, inks[i%len(inks)], halo, scale))
 		}
 	}
 	return out
@@ -155,8 +149,8 @@ const thinned = 0.55
 // reference drawn only where it parts from the course needs no room beside
 // it, and the course keeps its width. With nothing to draw the drawing is as
 // it was.
-func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, halo color.RGBA, scale float64) render.Drawing {
-	lines := ReferenceLines(refs, inks, halo, scale)
+func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, looks []Look, halo color.RGBA, scale float64) render.Drawing {
+	lines := ReferenceLines(refs, inks, looks, halo, scale)
 	if len(lines) == 0 {
 		return d
 	}

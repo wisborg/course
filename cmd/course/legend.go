@@ -11,14 +11,16 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"github.com/wisborg/osmbase/render"
+
+	"github.com/wisborg/course/routemap"
 )
 
 // entry is one line of a map's legend: what a line on the map is, or a
 // colour bar saying what a coloured line's colours mean.
 type entry struct {
-	name   string
-	ink    color.RGBA
-	dashed bool
+	name    string
+	ink     color.RGBA
+	pattern routemap.Pattern
 	// ramp, when set, makes the entry a colour bar, with name above it.
 	ramp *ramp
 }
@@ -156,8 +158,11 @@ func drawLegend(img *image.RGBA, entries []entry, face font.Face, scale float64,
 		}
 		row++
 		dash, gapLen := sample, 0
-		if e.dashed {
+		switch e.pattern {
+		case routemap.Dashed:
 			dash, gapLen = max(3, sample/4), max(2, sample/7)
+		case routemap.Dotted:
+			dash, gapLen = thick, max(2, 2*thick)
 		}
 		for x := x0; x < x0+sample; x += dash + gapLen {
 			end := min(x+dash, x0+sample)

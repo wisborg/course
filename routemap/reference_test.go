@@ -47,7 +47,8 @@ func TestGreatCircle(t *testing.T) {
 	}
 }
 
-// References are dashed, each in the next ink, and thinner than the course.
+// References are each drawn in their ink and look in turn: as wide as the
+// look says at the scale, and broken as it says.
 func TestReferenceLines(t *testing.T) {
 	refs := []Reference{
 		{Name: "a", Points: []render.Coord{{Lat: 0, Lon: 0}, {Lat: 0, Lon: 1}}},
@@ -55,18 +56,16 @@ func TestReferenceLines(t *testing.T) {
 		{Name: "b", Points: []render.Coord{{Lat: 1, Lon: 0}, {Lat: 1, Lon: 1}}},
 	}
 	inks := ReferenceInks(render.LightPalette())
-	lines := ReferenceLines(refs, inks, render.LightPalette().Background, 1)
+	looks := []Look{{Width: 2, Opacity: 1, Pattern: Dashed}, {Width: 2, Opacity: 1, Pattern: Dashed}, {Width: 5, Opacity: 1, Pattern: Dotted}}
+	lines := ReferenceLines(refs, inks, looks, render.LightPalette().Background, 2)
 	if len(lines) != 2 {
 		t.Fatalf("%d lines; a reference with one point is not a line", len(lines))
 	}
-	course, _, _, _ := sizes(1)
-	for i, l := range lines {
-		if len(l.Dash) == 0 || l.Width >= course {
-			t.Errorf("reference %d is dashed %v, %v wide; want dashed and thinner than the course's %v", i, l.Dash, l.Width, course)
-		}
+	if l := lines[0]; l.Width != 4 || len(l.Dash) != 2 || l.Ink != inks[0] {
+		t.Errorf("the first reference: %+v; want 4 wide at scale 2, dashed, in the first ink", l)
 	}
-	if lines[0].Ink == lines[1].Ink {
-		t.Error("two references share an ink")
+	if l := lines[1]; l.Width != 10 || l.Dash[0] >= 1 || l.Ink != inks[2] {
+		t.Errorf("the third reference: %+v; want 10 wide, dotted, in the third ink", l)
 	}
 }
 
@@ -100,11 +99,11 @@ func TestReferenceInksReadOnTheirMap(t *testing.T) {
 // changes.
 func TestWithReferences(t *testing.T) {
 	course := render.Drawing{Lines: []render.Line{{Points: []render.Coord{{Lat: 0, Lon: 0}, {Lat: 0, Lon: 1}}, Width: 4, Halo: 2}}}
-	if got := WithReferences(course, nil, nil, render.LightPalette().Background, 1); len(got.Lines) != 1 || got.Lines[0].Width != 4 {
+	if got := WithReferences(course, nil, nil, nil, render.LightPalette().Background, 1); len(got.Lines) != 1 || got.Lines[0].Width != 4 {
 		t.Errorf("with no references the drawing changed: %+v", got.Lines)
 	}
 	refs := []Reference{{Name: "r", Points: []render.Coord{{Lat: 0, Lon: 0}, {Lat: 0, Lon: 1}}}}
-	got := WithReferences(course, refs, ReferenceInks(render.LightPalette()), render.LightPalette().Background, 1)
+	got := WithReferences(course, refs, ReferenceInks(render.LightPalette()), []Look{{Width: 3, Opacity: 1, Halo: 2, Pattern: Dashed}}, render.LightPalette().Background, 1)
 	if len(got.Lines) != 2 || len(got.Lines[0].Dash) == 0 || len(got.Lines[1].Dash) != 0 {
 		t.Fatalf("lines %+v; want the reference first, then the course", got.Lines)
 	}
@@ -162,16 +161,17 @@ func TestFollowed(t *testing.T) {
 func TestWithReferencesKeepsTheCourseWideForDepartures(t *testing.T) {
 	d := render.Drawing{Lines: []render.Line{{Points: []render.Coord{{}, {Lat: 1}}, Width: 10, Halo: 2}}}
 	inks := []color.RGBA{{A: 0xff}}
+	dashed := []Look{{Width: 2, Opacity: 1, Pattern: Dashed}}
 	apart := Followed("Loop", line1km(), match.Match{Missed: []match.Stretch{{From: 200, To: 300}}})
-	got := WithReferences(d, []Reference{apart}, inks, color.RGBA{}, 1)
+	got := WithReferences(d, []Reference{apart}, inks, dashed, color.RGBA{}, 1)
 	if n := len(got.Lines); n != 2 || got.Lines[1].Width != 10 || got.Lines[0].Dash == nil {
 		t.Errorf("with a departure drawn: %+v; want the departure under the course at its full width", got.Lines)
 	}
-	got = WithReferences(d, []Reference{apart, FromCourse("Other", line1km())}, inks, color.RGBA{}, 1)
+	got = WithReferences(d, []Reference{apart, FromCourse("Other", line1km())}, inks, dashed, color.RGBA{}, 1)
 	if last := got.Lines[len(got.Lines)-1]; last.Width != 10*thinned {
 		t.Errorf("with a reference drawn whole, the course is %v wide, want narrowed", last.Width)
 	}
-	if got := WithReferences(d, []Reference{Followed("Loop", line1km(), match.Match{})}, inks, color.RGBA{}, 1); len(got.Lines) != 1 || got.Lines[0].Width != 10 {
+	if got := WithReferences(d, []Reference{Followed("Loop", line1km(), match.Match{})}, inks, dashed, color.RGBA{}, 1); len(got.Lines) != 1 || got.Lines[0].Width != 10 {
 		t.Errorf("with nothing of the reference to draw, the drawing changed: %+v", got.Lines)
 	}
 }

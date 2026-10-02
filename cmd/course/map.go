@@ -81,7 +81,7 @@ func init() {
 	f.StringVar(&mapOpts.out, "out", "", "the PNG to write (default: the course's name with .png, in this directory)")
 	f.IntVar(&mapOpts.width, "width", 1600, "the picture's width in pixels")
 	f.IntVar(&mapOpts.height, "height", 1000, "the picture's height in pixels")
-	f.StringVar(&mapOpts.palette, "palette", "light", "the map's colours: light or dark")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.palette, "palette", "light", "the map's colours: light or dark; the same as --set palette=..., and before any --set")
 	f.StringVar(&mapOpts.store, "store", "", "the osmbase store to draw from (default: osmbase's own)")
 	f.StringVar(&mapOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.BoolVar(&mapOpts.yes, "yes", false, "fetch what the store lacks without asking")
@@ -103,7 +103,11 @@ func init() {
 }
 
 func runMap(cmd *cobra.Command, args []string) error {
-	palette, overlay, err := paletteNamed(mapOpts.palette)
+	st, err := buildStyle(cmd)
+	if err != nil {
+		return err
+	}
+	palette, overlay, err := paletteNamed(st.Palette)
 	if err != nil {
 		return err
 	}
@@ -212,10 +216,12 @@ func runMap(cmd *cobra.Command, args []string) error {
 	scale := float64(max(view.Width, view.Height)) / 1000
 	face := faceAt(baseTextSize * scale)
 	inks := routemap.InksFor(palette, overlay)
-	drawing := routemap.Drawing(c, view, inks, scale)
-	actInks := routemap.ActivityInks(palette, overlay)
+	look := resolve(st, len(activities), refs, palette, overlay)
+	own := inks
+	own.Route = look.actInks[0]
+	drawing := routemap.Drawing(c, view, own, look.actLooks[0], scale)
 	if len(activities) > 1 {
-		drawing = routemap.ActivitiesDrawing(activities, view, inks, actInks, scale)
+		drawing = routemap.ActivitiesDrawing(activities, view, inks, look.actInks, look.actLooks, scale)
 	}
 	var col *colouring
 	switch {
@@ -232,24 +238,14 @@ func runMap(cmd *cobra.Command, args []string) error {
 		// where nothing is coloured -- a warm-up outside the stretch
 		// compared, a gap in the recording -- and the colours go over it.
 		for i := range drawing.Lines {
-			drawing.Lines[i].Ink = inks.Gap
+			// In grey, as translucent as the line's own look made it.
+			drawing.Lines[i].Ink = routemap.Translucent(inks.Gap, float64(drawing.Lines[i].Ink.A)/255)
 			drawing.Lines[i].Width *= 0.5
 			drawing.Lines[i].Halo *= 0.5
 		}
 		drawing.Gradients = append(drawing.Gradients, col.gradients...)
 	}
-	refInks := routemap.ReferenceInks(palette)
-	drawing = routemap.WithReferences(drawing, refs, refInks, inks.Halo, scale)
-	// Light lines, so the map shows through them; but solid when a
-	// reference is drawn whole beside the course, where two translucent
-	// lines over one another would mix into one muddy one.
-	style := routemap.Light
-	for _, r := range refs {
-		if !r.Follows {
-			style = routemap.Solid
-		}
-	}
-	drawing = routemap.Styled(drawing, style)
+	drawing = routemap.WithReferences(drawing, refs, look.refInks, look.refLooks, inks.Halo, scale)
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
 	}
@@ -262,10 +258,10 @@ func runMap(cmd *cobra.Command, args []string) error {
 		case col == nil && len(activities) > 1:
 			// Numbered as their starts and finishes are on the map.
 			for i := range activities {
-				legend = append(legend, entry{name: fmt.Sprintf("%d  %s", i+1, names[i]), ink: actInks[i%len(actInks)]})
+				legend = append(legend, entry{name: fmt.Sprintf("%d  %s", i+1, names[i]), ink: look.actInks[i], pattern: look.actLooks[i].Pattern})
 			}
 		case col == nil:
-			legend = append(legend, entry{name: name, ink: inks.Route})
+			legend = append(legend, entry{name: name, ink: look.actInks[0], pattern: look.actLooks[0].Pattern})
 		default:
 			legend = append(legend, entry{name: col.legend, ramp: &col.ramp})
 		}
@@ -277,7 +273,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 			case r.Follows:
 				name += ", where the course left it"
 			}
-			legend = append(legend, entry{name: name, ink: refInks[i%len(refInks)], dashed: true})
+			legend = append(legend, entry{name: name, ink: look.refInks[i], pattern: look.refLooks[i].Pattern})
 		}
 		size, margin := legendSize(legend, face, scale), metricsFor(face, scale).pad
 		credit := creditSpace(manifest.Attribution, face, margin)
