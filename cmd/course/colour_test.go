@@ -101,7 +101,7 @@ func TestMapColour(t *testing.T) {
 		{[]string{"--colour", "elevation", plan}, "no elevation"},
 		{[]string{"--colour", "grade", plan}, "no elevation"},
 		{[]string{"--colour", "grade", oneHeight}, "too little elevation"},
-		{[]string{"--colour", "stride", run1}, "pace, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power or cadence"},
+		{[]string{"--colour", "stride", run1}, `colouring.by: "stride" is not one; colour by pace, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power, cadence, or none`},
 		{[]string{"--colour", "pace", "--grade-cap", "25", run1}, "--grade-cap is for --colour grade"},
 		{[]string{"--colour", "grade", "--grade-cap", "0", run1}, "more than 0"},
 		{[]string{"--colour", "pace", "--compare", run1, run1}, "use one"},
@@ -424,7 +424,7 @@ func TestMapColourHeartRateAndPower(t *testing.T) {
 		{[]string{"--colour", "heart-rate", bare}, "no heart rate"},
 		{[]string{"--colour", "power", bare}, "no power"},
 		{[]string{"--colour", "power", "--power-source", "stryd", native}, "no stryd power; --power-source auto"},
-		{[]string{"--colour", "power", "--power-source", "strid", both}, `--power-source "strid" is invalid; use auto, stryd, or native`},
+		{[]string{"--colour", "power", "--power-source", "strid", both}, `colouring.power-source: "strid" is invalid; use auto, stryd, or native`},
 		{[]string{"--colour", "heart-rate", "--power-source", "native", both}, "--power-source is for --colour power"},
 	} {
 		resetNow(mapCmd)

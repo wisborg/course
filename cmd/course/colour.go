@@ -83,26 +83,18 @@ var powerSources = map[string]fitactivity.PowerSource{
 // checkColour refuses a --colour the course cannot be coloured by, before
 // any map is fetched or drawn: an unknown metric, one the file does not
 // record at all, or --colour with --compare, which colours by something else.
-// It refuses a --grade-cap or --power-source that is not one, and either one
-// given without the --colour it is for, which would otherwise be silently
-// ignored.
+// It refuses --grade-cap or --power-source typed on the command line for a
+// map not coloured by grade or power, which would otherwise be silently
+// ignored; a style may hold them for every map, coloured or not. The values
+// themselves are the style's to check.
 func checkColour(c *course.Course, o colourOptions) error {
 	if o.gradeCapGiven && o.metric != "grade" {
 		return errors.New("--grade-cap is for --colour grade")
 	}
-	if !(o.gradeCap > 0) {
-		return fmt.Errorf("--grade-cap %v: the cap is a grade in per cent, more than 0", o.gradeCap)
-	}
 	if o.powerGiven && o.metric != "power" {
 		return errors.New("--power-source is for --colour power")
 	}
-	src, ok := powerSources[o.power]
-	if !ok {
-		// Refused rather than taken as auto: a typo would colour the
-		// course by the other sensor, which reads a quarter lower or
-		// higher -- enough to be taken for a different run.
-		return fmt.Errorf("--power-source %q is invalid; use auto, stryd, or native", o.power)
-	}
+	src := powerSources[o.power] // a source the style's validation knows
 	switch o.metric {
 	case "":
 		return nil
@@ -144,7 +136,7 @@ func checkColour(c *course.Course, o colourOptions) error {
 		return fmt.Errorf("--colour %q: colour by %s", o.metric, colourMetrics)
 	}
 	if o.compare != "" {
-		return errors.New("--colour and --compare both colour the course; use one")
+		return fmt.Errorf("--compare and colouring by %s both colour the course; use one -- --set colouring.by=none undoes a style's", o.metric)
 	}
 	return nil
 }

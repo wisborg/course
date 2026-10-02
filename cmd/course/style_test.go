@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"image/png"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wisborg/fitactivity"
+	"github.com/wisborg/fitactivity/fittest"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course/mapstyle"
@@ -183,5 +186,74 @@ func TestMapIsTheSizeOfItsStyle(t *testing.T) {
 	f.Close()
 	if err != nil || cfg.Width != 320 || cfg.Height != 200 {
 		t.Errorf("the picture is %d by %d, %v; want 320 by 200", cfg.Width, cfg.Height, err)
+	}
+}
+
+// A style may colour every map: a theme colouring by grade colours a map
+// with no --colour; --colour none, or --set colouring.by=none, undoes it;
+// --grade-cap may go with a theme's grade. --compare with a style's
+// colouring is refused, saying how to undo the style's.
+func TestMapColouringFromItsStyle(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+	t.Cleanup(func() { styleOpts.file, styleOpts.sets = "", nil })
+
+	dir := t.TempDir()
+	run1, out, theme := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "run.png"), filepath.Join(dir, "theme.yaml")
+	var b strings.Builder
+	b.WriteString(`<gpx><trk><trkseg>`)
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><ele>%d</ele><time>%s</time></trkpt>`, ftoa6(20+float64(i)*0.0002), min(i, 99-i), stamp(10*i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, run1, b.String())
+	writeFile(t, theme, "colouring:\n  by: grade\n  grade-cap: 3\n")
+	base := []string{"map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "300", "--height", "200", "--style", theme}
+
+	for _, c := range []struct {
+		args []string
+		want string
+		not  string
+	}{
+		{nil, "by grade, ≤-3.0% (blue) to ≥+3.0% (red)", ""},
+		{[]string{"--grade-cap", "20"}, "by grade, -4.", "≥"},
+		{[]string{"--colour", "none"}, "", "coloured"},
+		{[]string{"--set", "colouring.by=none"}, "", "coloured"},
+		{[]string{"--colour", "elevation"}, "by elevation", ""},
+	} {
+		resetNow(mapCmd)
+		styleOpts.file, styleOpts.sets = "", nil
+		o, err := run(t, append(append(base, c.args...), run1)...)
+		if err != nil || !strings.Contains(o, c.want) || c.not != "" && strings.Contains(o, c.not) {
+			t.Errorf("%v: %v\n%s\nwant %q and not %q", c.args, err, o, c.want, c.not)
+		}
+	}
+	resetNow(mapCmd)
+	styleOpts.file, styleOpts.sets = "", nil
+	if _, err := run(t, append(base, "--compare", run1, run1)...); err == nil || !strings.Contains(err.Error(), "--set colouring.by=none") {
+		t.Errorf("--compare over a style colouring by grade: %v", err)
+	}
+}
+
+// A style's power source is the one a map is coloured by, with no
+// --power-source on the command line.
+func TestMapPowerSourceFromItsStyle(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+	t.Cleanup(func() { styleOpts.file, styleOpts.sets = "", nil })
+
+	dir := t.TempDir()
+	both, theme := filepath.Join(dir, "both.fit"), filepath.Join(dir, "theme.yaml")
+	opts := fittest.DefaultOptions()
+	opts.Count, opts.PowerWatts, opts.DeveloperField = 600, 250, fitactivity.StrydPowerField
+	if err := fittest.WriteFile(both, opts); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, theme, "colouring:\n  by: power\n  power-source: native\n")
+	o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", filepath.Join(dir, "m.png"), "--width", "300", "--height", "200", "--style", theme, both)
+	if err != nil || !strings.Contains(o, "by native power") {
+		t.Errorf("a style colouring by native power: %v\n%s", err, o)
 	}
 }

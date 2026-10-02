@@ -91,9 +91,9 @@ func init() {
 	f.StringVar(&mapOpts.legend, "legend", "auto", "where the legend goes: top-left, top-right, bottom-left or bottom-right; auto for whichever of them covers least of the course; none for no legend")
 	f.StringArrayVar(&mapOpts.titles, "title", nil, "what the legend calls the course (default: its file's name); with --separate, once for each activity, in the order given")
 	f.BoolVar(&mapOpts.separate, "separate", false, "draw several files as separate activities, each in its own colour with its own start and finish, rather than merged into one")
-	f.StringVar(&mapOpts.colour, "colour", "", "colour the course by a metric along it: pace, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power or cadence")
-	f.StringVar(&mapOpts.power, "power-source", "auto", "with --colour power, which power reading when the file carries both a footpod's (Stryd) developer field and the standard FIT power field -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; the two can disagree, being different sensors")
-	f.Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.colour, "colour", "none", "colour the course by a metric along it: pace, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power or cadence; the same as --set colouring.by=..., and before any --set")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.power, "power-source", "auto", "with --colour power, which power reading when the file carries both a footpod's (Stryd) developer field and the standard FIT power field -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; the two can disagree, being different sensors")
+	mapCmd.PersistentFlags().Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
 	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
 	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
 	f.StringVar(&mapOpts.greatCircle, "great-circle", "", "draw the great circle, dashed -- the shortest way over the globe -- between the course's start and finish (overall, as plain --great-circle does), each file's (--great-circle=each), or both (--great-circle=both)")
@@ -121,10 +121,14 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if len(c.Points) == 0 {
 		return errors.New("the course has no positions to draw")
 	}
+	metric := st.Colouring.By
+	if metric == "none" {
+		metric = ""
+	}
 	colours := colourOptions{
-		metric: mapOpts.colour, compare: mapOpts.compare,
-		gradeCap: mapOpts.gradeCap, gradeCapGiven: cmd.Flags().Changed("grade-cap"),
-		power: mapOpts.power, powerGiven: cmd.Flags().Changed("power-source"),
+		metric: metric, compare: mapOpts.compare,
+		gradeCap: st.Colouring.GradeCap, gradeCapGiven: cmd.Flags().Changed("grade-cap"),
+		power: st.Colouring.PowerSource, powerGiven: cmd.Flags().Changed("power-source"),
 	}
 	if !slices.Contains(append([]string{"auto", "none"}, legendCorners...), mapOpts.legend) {
 		return fmt.Errorf("--legend %q: use %s, auto or none", mapOpts.legend, strings.Join(legendCorners, ", "))
@@ -224,7 +228,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	switch {
 	case mapOpts.compare != "":
 		col, err = compareWith(c, name, mapOpts.compare, scale)
-	case mapOpts.colour != "":
+	case metric != "":
 		col, err = colourBy(activities, name, colours, scale)
 	}
 	if err != nil {

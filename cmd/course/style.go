@@ -26,7 +26,8 @@ var mapStyleCmd = &cobra.Command{
 	Use:   "style",
 	Short: "Print the style a map would be drawn in, every setting with a comment",
 	Long: `style prints, as YAML, the style course map draws in with the same --style,
---set, --palette, --width and --height: the built-in defaults, then the file's settings over
+--set and the flags that are settings of it -- --palette, --width, --height,
+--colour, --grade-cap and --power-source: the built-in defaults, then the file's settings over
 them, then the command line's. Every setting is there, with a comment saying
 what it takes, so
 
@@ -57,9 +58,9 @@ func init() {
 }
 
 // buildStyle is the style the flags make: the defaults, the --style file
-// over them, then the command line -- --palette, --width and --height, which
-// are the same as --set palette=... and so on, and then every --set in turn
-// -- and checked.
+// over them, then the command line -- --palette, --width, --height,
+// --colour, --grade-cap and --power-source, which are the same as --set
+// palette=... and so on, and then every --set in turn -- and checked.
 func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	st := mapstyle.Default()
 	if styleOpts.file != "" {
@@ -75,6 +76,15 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	}
 	if cmd.Flags().Changed("height") {
 		st.Height = mapOpts.height
+	}
+	if cmd.Flags().Changed("colour") {
+		st.Colouring.By = mapOpts.colour
+	}
+	if cmd.Flags().Changed("grade-cap") {
+		st.Colouring.GradeCap = mapOpts.gradeCap
+	}
+	if cmd.Flags().Changed("power-source") {
+		st.Colouring.PowerSource = mapOpts.power
 	}
 	for _, s := range styleOpts.sets {
 		if err := st.Set(s); err != nil {

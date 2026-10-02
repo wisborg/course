@@ -15,6 +15,9 @@ func TestDefault(t *testing.T) {
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if s.Colouring != (Colouring{By: "none", GradeCap: 15, PowerSource: "auto"}) {
+		t.Errorf("default colouring %+v", s.Colouring)
+	}
 	if s.Width != 1600 || s.Height != 1000 {
 		t.Errorf("default size %d by %d", s.Width, s.Height)
 	}
@@ -85,13 +88,15 @@ func TestSet(t *testing.T) {
 		"palette=dark",
 		"palette=light",
 		"width=4800",
+		"colouring.by=grade",
+		"colouring.grade-cap=30",
 		"height=3000",
 	} {
 		if err := s.Set(set); err != nil {
 			t.Fatalf("--set %s: %v", set, err)
 		}
 	}
-	if s.Course.Colour != "#d32f2f" || *s.Course.Width != 4.5 || s.Palette != "light" || s.Course.Style != "solid" || s.Width != 4800 || s.Height != 3000 {
+	if s.Course.Colour != "#d32f2f" || *s.Course.Width != 4.5 || s.Palette != "light" || s.Course.Style != "solid" || s.Width != 4800 || s.Height != 3000 || s.Colouring.By != "grade" || s.Colouring.GradeCap != 30 {
 		t.Errorf("course and palette: %+v", s)
 	}
 	if len(s.Reference.Colours) != 2 || s.Reference.Colours[1] != "#445566" {
@@ -114,6 +119,7 @@ func TestSet(t *testing.T) {
 		{"activities.two.width=3", "numbered from 1"},
 		{"palette.dark=1", "palette"},
 		{"width.x=1", "width is one setting"},
+		{"colouring.metric=pace", `no such setting "metric"; colouring has by, grade-cap, power-source`},
 	} {
 		s := Default()
 		if err := s.Set(c.set); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -127,6 +133,9 @@ func TestValidate(t *testing.T) {
 	for _, c := range []struct{ set, want string }{
 		{"palette=sepia", "palette"},
 		{"width=63", "width: 63 pixels is too small"},
+		{"colouring.by=stride", "colouring.by: \"stride\" is not one"},
+		{"colouring.grade-cap=0", "colouring.grade-cap"},
+		{"colouring.power-source=strid", "colouring.power-source: \"strid\" is invalid; use auto, stryd, or native"},
 		{"height=0", "height: 0 pixels is too small"},
 		{"course.colour=red", "course.colour"},
 		{"course.colour=#12345", "course.colour"},
@@ -166,7 +175,7 @@ func TestWrite(t *testing.T) {
 	}
 	out := b.String()
 	for _, want := range []string{
-		"palette: light", "width: 1600", "height: 1000", "# The picture's width in pixels", "colours: []", "width: 2.25", "style: dashed",
+		"palette: light", "by: none", "grade-cap: 15", "power-source: auto", "width: 1600", "height: 1000", "# The picture's width in pixels", "colours: []", "width: 2.25", "style: dashed",
 		"# A hex colour", "# solid, dashed or dotted.", "colour: auto # light palette: #1b1b1b",
 		"Loop:", "width: 6",
 	} {

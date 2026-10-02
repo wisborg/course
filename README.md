@@ -75,8 +75,8 @@ The system fonts are read on this machine and never copied anywhere.
 
 ### Map styles
 
-How a map looks -- its palette, its size, and the colour, width, opacity and style of its
-lines -- is a style, made in three layers, each changing only what it says: the built-in defaults, then a
+How a map looks -- its palette, its size, what its course is coloured by, and the colour,
+width, opacity and style of its lines -- is a style, made in three layers, each changing only what it says: the built-in defaults, then a
 style file given with `--style`, then single settings given with `--set`. The file is YAML,
 and so may be JSON.
 
@@ -94,6 +94,10 @@ brings it up to the settings there are now.
 palette: dark            # light or dark; --palette is the same as --set palette=...
 width: 1920              # the picture, in pixels; --width and --height are the same
 height: 1080             #   as --set width=... and --set height=...
+colouring:               # --colour, --grade-cap and --power-source are the same
+  by: grade              # none, or pace, grade-adjusted-pace, elevation, grade, ...
+  grade-cap: 15
+  power-source: auto
 course:                  # the course, and with --separate every activity
   colour: "#ff5252"      # #rrggbb or #rrggbbaa, or auto for the palette's own
   colours: []            # with --separate, the 2nd, 3rd, ... activities' colours
@@ -113,6 +117,10 @@ references:              # one reference, by its name
   Rhodes parkrun:
     colour: "#0077aa"
 ```
+
+A theme that colours its maps colours every map drawn with it; `--colour none` undoes that for
+one map. `--compare` colours the course too, so with a style's colouring it is refused until
+`--set colouring.by=none` is given as well.
 
 A setting for one activity or one reference says only what differs from `course` or
 `reference`. On the command line a setting's path is its keys joined by dots, an activity

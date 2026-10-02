@@ -36,6 +36,8 @@ type Style struct {
 	// size.
 	Width  int `yaml:"width"`
 	Height int `yaml:"height"`
+	// Colouring is what the course's line is coloured by, if anything.
+	Colouring Colouring `yaml:"colouring"`
 	// Course is how the course is drawn, and with --separate every
 	// activity, unless Activities says otherwise for one.
 	Course Line `yaml:"course"`
@@ -51,6 +53,26 @@ type Style struct {
 	// Each says only what differs from Reference.
 	References map[string]Line `yaml:"references"`
 }
+
+// Colouring is what a course's line is coloured by, along it, and how.
+type Colouring struct {
+	// By is one of Metrics, or none to draw the line in its own colour.
+	By string `yaml:"by"`
+	// GradeCap is, with By grade, the steepest grade the colours tell
+	// apart, in per cent either way; steeper takes the end colour.
+	GradeCap float64 `yaml:"grade-cap"`
+	// PowerSource is, with By power, which of a recording's two power
+	// readings: one of PowerSources.
+	PowerSource string `yaml:"power-source"`
+}
+
+// Metrics are what a course can be coloured by, and PowerSources the power
+// readings it can be coloured by -- the same three, meaning the same, as
+// videofx's and fitdash's --power-source.
+var (
+	Metrics      = []string{"pace", "grade-adjusted-pace", "elevation", "grade", "heart-rate", "power", "air-power", "cadence"}
+	PowerSources = []string{"auto", "stryd", "native"}
+)
 
 // Line is how one kind of line is drawn. In Course and Reference every
 // setting has a value; in an entry of Activities or References, a setting
@@ -81,6 +103,7 @@ func Default() Style {
 		Palette:    "light",
 		Width:      1600,
 		Height:     1000,
+		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto"},
 		Course:     Line{Colour: "auto", Colours: []string{}, Width: ptr(3), Opacity: "auto", Style: "solid"},
 		Activities: []Line{},
 		Reference:  Line{Colour: "auto", Colours: []string{}, Width: ptr(2.25), Opacity: "auto", Style: "dashed"},
@@ -128,6 +151,7 @@ func plain(err error) error {
 	msg := strings.NewReplacer(
 		" in type mapstyle.Line", "; a line has "+strings.Join(lineKeys, ", "),
 		" in type mapstyle.Style", "; a style has "+strings.Join(topKeys, ", "),
+		" in type mapstyle.Colouring", "; colouring has "+strings.Join(colouringKeys, ", "),
 	).Replace(err.Error())
 	return errors.New(msg)
 }
@@ -211,8 +235,9 @@ func (s *Style) Set(setting string) error {
 var bareColour = regexp.MustCompile(`(^|[\[,\s])(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)\b`)
 
 var (
-	topKeys  = []string{"palette", "width", "height", "course", "activities", "reference", "references"}
-	lineKeys = []string{"colour", "colours", "width", "opacity", "style"}
+	topKeys       = []string{"palette", "width", "height", "colouring", "course", "activities", "reference", "references"}
+	colouringKeys = []string{"by", "grade-cap", "power-source"}
+	lineKeys      = []string{"colour", "colours", "width", "opacity", "style"}
 )
 
 // checkPath says what is wrong with keys as the path of a setting, in the
@@ -229,6 +254,11 @@ func checkPath(keys []string) error {
 	case "palette", "width", "height":
 		if len(keys) > 1 {
 			return fmt.Errorf("%s is one setting, not a group of them", keys[0])
+		}
+		return nil
+	case "colouring":
+		if len(keys) > 2 || len(keys) == 2 && !slices.Contains(colouringKeys, keys[1]) {
+			return fmt.Errorf("no such setting %q; colouring has %s", strings.Join(keys[1:], "."), strings.Join(colouringKeys, ", "))
 		}
 		return nil
 	case "course", "reference":
@@ -294,6 +324,16 @@ func (s Style) Validate() error {
 	}
 	if s.Height < smallest {
 		return fmt.Errorf("height: %d pixels is too small to draw a course on; give at least %d", s.Height, smallest)
+	}
+	if s.Colouring.By != "none" && !slices.Contains(Metrics, s.Colouring.By) {
+		return fmt.Errorf("colouring.by: %q is not one; colour by %s, or none", s.Colouring.By, strings.Join(Metrics, ", "))
+	}
+	if !(s.Colouring.GradeCap > 0) {
+		return fmt.Errorf("colouring.grade-cap: %v is not one; the cap is a grade in per cent, more than 0", s.Colouring.GradeCap)
+	}
+	if !slices.Contains(PowerSources, s.Colouring.PowerSource) {
+		// The words videofx and fitdash refuse it in.
+		return fmt.Errorf("colouring.power-source: %q is invalid; use auto, stryd, or native", s.Colouring.PowerSource)
 	}
 	if err := s.Course.check("course", true, true); err != nil {
 		return err
@@ -435,25 +475,29 @@ func comment(n *yaml.Node, path string, autos map[string]string) {
 }
 
 var descriptions = map[string]string{
-	"palette":           "The map's colours: light or dark.",
-	"width":             "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
-	"height":            "The picture's height in pixels.",
-	"course":            "The course, and with --separate every activity unless activities says otherwise.",
-	"course.colour":     "A hex colour, #rrggbb or #rrggbbaa, or auto for the palette's own.\nWith --separate, activity 1's.",
-	"course.colours":    "With --separate, the 2nd, 3rd, ... activities' colours, taken in turn.\nEmpty is the palette's own.",
-	"course.width":      "In pixels on a map 1000 pixels across; scaled with the map.",
-	"course.opacity":    "From 0 to 1, or auto: 0.7, so the map shows through, but 1 -- with a\nslim halo -- when a reference is drawn whole over the course.",
-	"course.style":      "solid, dashed or dotted.",
-	"activities":        "With --separate, settings for single activities, by position: the first\nentry is activity 1, as numbered on the map. Each needs only what differs\nfrom course: colour, width, opacity, style. On the command line:\n--set activities.2.colour=#1565c0",
-	"reference":         "Every reference, unless references says otherwise.",
-	"reference.colour":  "One hex colour for every reference, or auto to take colours in turn.",
-	"reference.colours": "Hex colours taken in turn, one for each reference. Empty is the\npalette's own.",
-	"reference.width":   "In pixels on a map 1000 pixels across; scaled with the map.",
-	"reference.opacity": "From 0 to 1, or auto, as for course.",
-	"reference.style":   "solid, dashed or dotted.",
-	"references":        "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
-	"override.colour":   "A hex colour, #rrggbb or #rrggbbaa.",
-	"override.width":    "In pixels on a map 1000 pixels across.",
-	"override.opacity":  "From 0 to 1, or auto.",
-	"override.style":    "solid, dashed or dotted.",
+	"palette":                "The map's colours: light or dark.",
+	"width":                  "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
+	"height":                 "The picture's height in pixels.",
+	"colouring":              "What the course's line is coloured by along it; --colour, --grade-cap and\n--power-source are the same as setting these.",
+	"colouring.by":           "none, or one of pace, grade-adjusted-pace, elevation, grade, heart-rate,\npower, air-power, cadence.",
+	"colouring.grade-cap":    "With by: grade, the steepest grade the colours tell apart, in per cent\neither way; steeper takes the end colour.",
+	"colouring.power-source": "With by: power, which reading when a file has both: auto (a footpod's,\nsuch as Stryd's, if there is one), stryd, or native (the watch's).",
+	"course":                 "The course, and with --separate every activity unless activities says otherwise.",
+	"course.colour":          "A hex colour, #rrggbb or #rrggbbaa, or auto for the palette's own.\nWith --separate, activity 1's.",
+	"course.colours":         "With --separate, the 2nd, 3rd, ... activities' colours, taken in turn.\nEmpty is the palette's own.",
+	"course.width":           "In pixels on a map 1000 pixels across; scaled with the map.",
+	"course.opacity":         "From 0 to 1, or auto: 0.7, so the map shows through, but 1 -- with a\nslim halo -- when a reference is drawn whole over the course.",
+	"course.style":           "solid, dashed or dotted.",
+	"activities":             "With --separate, settings for single activities, by position: the first\nentry is activity 1, as numbered on the map. Each needs only what differs\nfrom course: colour, width, opacity, style. On the command line:\n--set activities.2.colour=#1565c0",
+	"reference":              "Every reference, unless references says otherwise.",
+	"reference.colour":       "One hex colour for every reference, or auto to take colours in turn.",
+	"reference.colours":      "Hex colours taken in turn, one for each reference. Empty is the\npalette's own.",
+	"reference.width":        "In pixels on a map 1000 pixels across; scaled with the map.",
+	"reference.opacity":      "From 0 to 1, or auto, as for course.",
+	"reference.style":        "solid, dashed or dotted.",
+	"references":             "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
+	"override.colour":        "A hex colour, #rrggbb or #rrggbbaa.",
+	"override.width":         "In pixels on a map 1000 pixels across.",
+	"override.opacity":       "From 0 to 1, or auto.",
+	"override.style":         "solid, dashed or dotted.",
 }
