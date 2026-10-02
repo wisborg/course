@@ -36,6 +36,14 @@ type Style struct {
 	// size.
 	Width  int `yaml:"width"`
 	Height int `yaml:"height"`
+	// Text is the text course writes over the map.
+	Text Text `yaml:"text"`
+	// Map is the map under the course.
+	Map Map `yaml:"map"`
+	// Legend is the legend saying what each line or colour is.
+	Legend Legend `yaml:"legend"`
+	// Markers are the course's distance markers.
+	Markers Markers `yaml:"markers"`
 	// Colouring is what the course's line is coloured by, if anything.
 	Colouring Colouring `yaml:"colouring"`
 	// Course is how the course is drawn, and with --separate every
@@ -54,6 +62,39 @@ type Style struct {
 	References map[string]Line `yaml:"references"`
 }
 
+// Text is the text course writes over the map: start and finish, the
+// distance markers' numbers, the legend, the map's credit.
+type Text struct {
+	// Size is in pixels on a map 1000 pixels across, scaled with the map.
+	Size float64 `yaml:"size"`
+}
+
+// Map is the map under the course.
+type Map struct {
+	// LabelSize is the size of the map's own names -- streets, places --
+	// in pixels on a map 1000 pixels across and scaled with it; or auto,
+	// for the 13 pixels they have always been at any size of picture.
+	LabelSize string `yaml:"label-size"`
+}
+
+// Legend is the legend saying what each line or colour is.
+type Legend struct {
+	// Position is one of LegendPositions: a corner; auto for whichever
+	// corner covers least of the course; none for no legend.
+	Position string `yaml:"position"`
+}
+
+// Markers are the course's distance markers, on a course whose file
+// recorded distance.
+type Markers struct {
+	// Every is the distance between them in kilometres; auto for a
+	// distance that suits the course's length; none for no markers.
+	Every string `yaml:"every"`
+}
+
+// LegendPositions are where a legend may go.
+var LegendPositions = []string{"auto", "top-left", "top-right", "bottom-left", "bottom-right", "none"}
+
 // Colouring is what a course's line is coloured by, along it, and how.
 type Colouring struct {
 	// By is one of Metrics, or none to draw the line in its own colour.
@@ -64,6 +105,8 @@ type Colouring struct {
 	// PowerSource is, with By power, which of a recording's two power
 	// readings: one of PowerSources.
 	PowerSource string `yaml:"power-source"`
+	// Width is the coloured line's, in pixels on a map 1000 pixels across.
+	Width float64 `yaml:"width"`
 }
 
 // Metrics are what a course can be coloured by, and PowerSources the power
@@ -93,6 +136,10 @@ type Line struct {
 	Opacity string `yaml:"opacity,omitempty"`
 	// Style is solid, dashed or dotted.
 	Style string `yaml:"style,omitempty"`
+	// Halo is how far a band of the map's background reaches either side
+	// of the line, in pixels on a map 1000 pixels across; or auto, for a
+	// slim one on an opaque line and none on a translucent one.
+	Halo string `yaml:"halo,omitempty"`
 }
 
 func ptr(v float64) *float64 { return &v }
@@ -103,10 +150,14 @@ func Default() Style {
 		Palette:    "light",
 		Width:      1600,
 		Height:     1000,
-		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto"},
-		Course:     Line{Colour: "auto", Colours: []string{}, Width: ptr(3), Opacity: "auto", Style: "solid"},
+		Text:       Text{Size: 13},
+		Map:        Map{LabelSize: "auto"},
+		Legend:     Legend{Position: "auto"},
+		Markers:    Markers{Every: "auto"},
+		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto", Width: 3},
+		Course:     Line{Colour: "auto", Colours: []string{}, Width: ptr(3), Opacity: "auto", Style: "solid", Halo: "auto"},
 		Activities: []Line{},
-		Reference:  Line{Colour: "auto", Colours: []string{}, Width: ptr(2.25), Opacity: "auto", Style: "dashed"},
+		Reference:  Line{Colour: "auto", Colours: []string{}, Width: ptr(2.25), Opacity: "auto", Style: "dashed", Halo: "auto"},
 		References: map[string]Line{},
 	}
 }
@@ -151,7 +202,11 @@ func plain(err error) error {
 	msg := strings.NewReplacer(
 		" in type mapstyle.Line", "; a line has "+strings.Join(lineKeys, ", "),
 		" in type mapstyle.Style", "; a style has "+strings.Join(topKeys, ", "),
-		" in type mapstyle.Colouring", "; colouring has "+strings.Join(colouringKeys, ", "),
+		" in type mapstyle.Colouring", "; colouring has "+strings.Join(groupKeys["colouring"], ", "),
+		" in type mapstyle.Text", "; text has "+strings.Join(groupKeys["text"], ", "),
+		" in type mapstyle.Map", "; map has "+strings.Join(groupKeys["map"], ", "),
+		" in type mapstyle.Legend", "; legend has "+strings.Join(groupKeys["legend"], ", "),
+		" in type mapstyle.Markers", "; markers has "+strings.Join(groupKeys["markers"], ", "),
 	).Replace(err.Error())
 	return errors.New(msg)
 }
@@ -235,9 +290,16 @@ func (s *Style) Set(setting string) error {
 var bareColour = regexp.MustCompile(`(^|[\[,\s])(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)\b`)
 
 var (
-	topKeys       = []string{"palette", "width", "height", "colouring", "course", "activities", "reference", "references"}
-	colouringKeys = []string{"by", "grade-cap", "power-source"}
-	lineKeys      = []string{"colour", "colours", "width", "opacity", "style"}
+	topKeys  = []string{"palette", "width", "height", "text", "map", "legend", "markers", "colouring", "course", "activities", "reference", "references"}
+	lineKeys = []string{"colour", "colours", "width", "opacity", "style", "halo"}
+	// groupKeys are the settings of each group that is not a line.
+	groupKeys = map[string][]string{
+		"text":      {"size"},
+		"map":       {"label-size"},
+		"legend":    {"position"},
+		"markers":   {"every"},
+		"colouring": {"by", "grade-cap", "power-source", "width"},
+	}
 )
 
 // checkPath says what is wrong with keys as the path of a setting, in the
@@ -256,9 +318,10 @@ func checkPath(keys []string) error {
 			return fmt.Errorf("%s is one setting, not a group of them", keys[0])
 		}
 		return nil
-	case "colouring":
-		if len(keys) > 2 || len(keys) == 2 && !slices.Contains(colouringKeys, keys[1]) {
-			return fmt.Errorf("no such setting %q; colouring has %s", strings.Join(keys[1:], "."), strings.Join(colouringKeys, ", "))
+	case "text", "map", "legend", "markers", "colouring":
+		group := groupKeys[keys[0]]
+		if len(keys) > 2 || len(keys) == 2 && !slices.Contains(group, keys[1]) {
+			return fmt.Errorf("no such setting %q; %s has %s", strings.Join(keys[1:], "."), keys[0], strings.Join(group, ", "))
 		}
 		return nil
 	case "course", "reference":
@@ -325,6 +388,23 @@ func (s Style) Validate() error {
 	if s.Height < smallest {
 		return fmt.Errorf("height: %d pixels is too small to draw a course on; give at least %d", s.Height, smallest)
 	}
+	if !(s.Text.Size > 0) {
+		return fmt.Errorf("text.size: %v is not a size; give pixels on a map 1000 across, more than 0", s.Text.Size)
+	}
+	if err := autoOrPositive("map.label-size", s.Map.LabelSize, "pixels on a map 1000 across"); err != nil {
+		return err
+	}
+	if !slices.Contains(LegendPositions, s.Legend.Position) {
+		return fmt.Errorf("legend.position: %q is not one; use %s", s.Legend.Position, strings.Join(LegendPositions, ", "))
+	}
+	if s.Markers.Every != "none" {
+		if err := autoOrPositive("markers.every", s.Markers.Every, "kilometres, or none"); err != nil {
+			return err
+		}
+	}
+	if !(s.Colouring.Width > 0) {
+		return fmt.Errorf("colouring.width: %v is not a width; give pixels on a map 1000 across, more than 0", s.Colouring.Width)
+	}
 	if s.Colouring.By != "none" && !slices.Contains(Metrics, s.Colouring.By) {
 		return fmt.Errorf("colouring.by: %q is not one; colour by %s, or none", s.Colouring.By, strings.Join(Metrics, ", "))
 	}
@@ -363,8 +443,8 @@ func (s Style) Validate() error {
 // l is a default, which must have every setting; colours whether it may
 // have a Colours list.
 func (l Line) check(path string, whole, colours bool) error {
-	if whole && (l.Colour == "" || l.Width == nil || l.Opacity == "" || l.Style == "") {
-		return fmt.Errorf("%s: colour, width, opacity and style must all be set", path)
+	if whole && (l.Colour == "" || l.Width == nil || l.Opacity == "" || l.Style == "" || l.Halo == "") {
+		return fmt.Errorf("%s: colour, width, opacity, style and halo must all be set", path)
 	}
 	if l.Colour != "" && l.Colour != "auto" && !hexColour.MatchString(l.Colour) {
 		return fmt.Errorf("%s.colour: %q is not a colour; use #rrggbb, #rrggbbaa or auto", path, l.Colour)
@@ -386,8 +466,26 @@ func (l Line) check(path string, whole, colours bool) error {
 			return fmt.Errorf("%s.opacity: %q is not one; use a number from 0 to 1, or auto", path, l.Opacity)
 		}
 	}
+	if l.Halo != "" && l.Halo != "auto" {
+		h, err := strconv.ParseFloat(l.Halo, 64)
+		if err != nil || h < 0 {
+			return fmt.Errorf("%s.halo: %q is not one; give pixels on a map 1000 across, 0 or more, or auto", path, l.Halo)
+		}
+	}
 	if l.Style != "" && !slices.Contains(LineStyles, l.Style) {
 		return fmt.Errorf("%s.style: %q is not one; use %s", path, l.Style, strings.Join(LineStyles, ", "))
+	}
+	return nil
+}
+
+// autoOrPositive checks that the setting at path, v, is auto or a number
+// above 0, in the unit given.
+func autoOrPositive(path, v, unit string) error {
+	if v == "auto" {
+		return nil
+	}
+	if n, err := strconv.ParseFloat(v, 64); err != nil || !(n > 0) {
+		return fmt.Errorf("%s: %q is not one; give %s, more than 0, or auto", path, v, unit)
 	}
 	return nil
 }
@@ -478,10 +576,22 @@ var descriptions = map[string]string{
 	"palette":                "The map's colours: light or dark.",
 	"width":                  "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
 	"height":                 "The picture's height in pixels.",
+	"text":                   "The text course writes over the map: start and finish, the distance\nmarkers' numbers, the legend, the map's credit.",
+	"text.size":              "In pixels on a map 1000 pixels across; scaled with the map.",
+	"map":                    "The map under the course.",
+	"map.label-size":         "The size of the map's own names, streets and places, in pixels on a map\n1000 pixels across and scaled with it; or auto, for 13 pixels at any size.",
+	"legend":                 "The legend saying what each line or colour is.",
+	"legend.position":        "top-left, top-right, bottom-left or bottom-right; auto for whichever covers\nleast of the course; none for no legend. --legend is the same as setting it.",
+	"markers":                "The distance markers, on a course whose file recorded distance.",
+	"markers.every":          "The distance between them in kilometres; auto for one that suits the\ncourse's length; none for no markers.",
 	"colouring":              "What the course's line is coloured by along it; --colour, --grade-cap and\n--power-source are the same as setting these.",
 	"colouring.by":           "none, or one of pace, grade-adjusted-pace, elevation, grade, heart-rate,\npower, air-power, cadence.",
 	"colouring.grade-cap":    "With by: grade, the steepest grade the colours tell apart, in per cent\neither way; steeper takes the end colour.",
 	"colouring.power-source": "With by: power, which reading when a file has both: auto (a footpod's,\nsuch as Stryd's, if there is one), stryd, or native (the watch's).",
+	"colouring.width":        "The coloured line's width, in pixels on a map 1000 pixels across.",
+	"course.halo":            "A band of the map's background either side of the line, in pixels on a\nmap 1000 across; auto: a slim one on an opaque line, none on a translucent one.",
+	"reference.halo":         "As for course.",
+	"override.halo":          "In pixels on a map 1000 pixels across, or auto.",
 	"course":                 "The course, and with --separate every activity unless activities says otherwise.",
 	"course.colour":          "A hex colour, #rrggbb or #rrggbbaa, or auto for the palette's own.\nWith --separate, activity 1's.",
 	"course.colours":         "With --separate, the 2nd, 3rd, ... activities' colours, taken in turn.\nEmpty is the palette's own.",
@@ -495,7 +605,7 @@ var descriptions = map[string]string{
 	"reference.width":        "In pixels on a map 1000 pixels across; scaled with the map.",
 	"reference.opacity":      "From 0 to 1, or auto, as for course.",
 	"reference.style":        "solid, dashed or dotted.",
-	"references":             "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
+	"references":             "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle, halo. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
 	"override.colour":        "A hex colour, #rrggbb or #rrggbbaa.",
 	"override.width":         "In pixels on a map 1000 pixels across.",
 	"override.opacity":       "From 0 to 1, or auto.",

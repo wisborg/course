@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/wisborg/fitactivity/fittest"
 	"github.com/wisborg/osmbase/render"
 
+	"github.com/wisborg/course"
 	"github.com/wisborg/course/mapstyle"
 	"github.com/wisborg/course/routemap"
 )
@@ -255,5 +257,106 @@ func TestMapPowerSourceFromItsStyle(t *testing.T) {
 	o, err := run(t, "map", "--store", filepath.Join(dir, "store"), "--out", filepath.Join(dir, "m.png"), "--width", "300", "--height", "200", "--style", theme, both)
 	if err != nil || !strings.Contains(o, "by native power") {
 		t.Errorf("a style colouring by native power: %v\n%s", err, o)
+	}
+}
+
+// A halo is auto -- slim on an opaque line, none on a translucent one -- or
+// the size given, translucent line or not; an activity or a reference may
+// have its own.
+func TestResolveHalo(t *testing.T) {
+	p, o := render.LightPalette(), render.LightOverlay()
+	refs := []routemap.Reference{{Name: "A", Follows: true}, {Name: "B", Follows: true}}
+	st := mapstyle.Default()
+	for _, set := range []string{"course.halo=2.5", "references.B.halo=0.5", "reference.opacity=1"} {
+		if err := st.Set(set); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d := resolve(st, 1, refs, p, o)
+	if d.actLooks[0].Halo != 2.5 || d.actLooks[0].Opacity != 0.7 {
+		t.Errorf("course %+v; want its own 2.5 halo, translucent", d.actLooks[0])
+	}
+	if d.refLooks[0].Halo != 1 || d.refLooks[1].Halo != 0.5 {
+		t.Errorf("references' halos %v and %v; want auto's 1 on an opaque line, and B's own 0.5", d.refLooks[0].Halo, d.refLooks[1].Halo)
+	}
+}
+
+// The map's own names are 13 pixels at any size unless a size is given,
+// which is scaled with the picture; markers are every so many kilometres,
+// auto, or none.
+func TestMapLabelSizeAndMarkerEvery(t *testing.T) {
+	st := mapstyle.Default()
+	if got := mapLabelSize(st, 2.4); got != 13 {
+		t.Errorf("auto at scale 2.4: %v, want 13", got)
+	}
+	st.Map.LabelSize = "9"
+	if got := mapLabelSize(st, 2.4); math.Abs(got-21.6) > 1e-9 {
+		t.Errorf("9 at scale 2.4: %v, want %v", got, 9*2.4)
+	}
+	for every, want := range map[string]float64{"auto": 0, "none": -1, "2.5": 2500} {
+		st.Markers.Every = every
+		if got := markerEvery(st); got != want {
+			t.Errorf("markers every %s: %v, want %v", every, got, want)
+		}
+	}
+}
+
+// The new settings reach the map: markers as often as asked, or none; the
+// coloured line as wide as asked; the text, and so the legend, as large.
+func TestMapDrawsTheNewSettings(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+	t.Cleanup(func() { styleOpts.file, styleOpts.sets = "", nil })
+
+	dir := t.TempDir()
+	fit := filepath.Join(dir, "run.fit")
+	opts := fittest.DefaultOptions()
+	opts.Count = 2000 // 6 km at 3 m/s
+	if err := fittest.WriteFile(fit, opts); err != nil {
+		t.Fatal(err)
+	}
+	draw := func(sets ...string) string {
+		t.Helper()
+		resetNow(mapCmd)
+		styleOpts.file, styleOpts.sets = "", nil
+		args := []string{"map", "--store", filepath.Join(dir, "store"), "--out", filepath.Join(dir, "m.png"), "--width", "600", "--height", "400"}
+		for _, s := range sets {
+			args = append(args, "--set", s)
+		}
+		o, err := run(t, append(args, fit)...)
+		if err != nil {
+			t.Fatalf("map %v: %v\n%s", sets, err, o)
+		}
+		return o
+	}
+	for _, c := range []struct {
+		set  []string
+		want string
+	}{
+		{nil, "5 distance markers"},
+		{[]string{"markers.every=2"}, "2 distance markers"},
+		{[]string{"markers.every=none"}, "markers    none, as the style asks"},
+	} {
+		if o := draw(c.set...); !strings.Contains(o, c.want) {
+			t.Errorf("%v: the report says\n%s\nwant %q", c.set, o, c.want)
+		}
+	}
+
+	// The coloured line's width, in the gradient handed to the drawing.
+	c, err := course.Read(fit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	col, err := colourBy([]*course.Course{c}, "run", colourOptions{metric: "elevation", gradeCap: 15, power: "auto", width: 6}, 2)
+	if err != nil || len(col.gradients) == 0 || col.gradients[0].Width != 12 {
+		t.Errorf("a coloured line 6 wide at scale 2: %v, %+v", err, col)
+	}
+
+	// A larger text makes a larger legend.
+	face1, face2 := faceAt(13), faceAt(26)
+	e := []entry{{name: "A course with a long name", ink: color.RGBA{A: 0xff}}}
+	if a, b := legendSize(e, face1, 1), legendSize(e, face2, 1); b.X <= a.X || b.Y <= a.Y {
+		t.Errorf("legends at text 13 and 26: %v and %v", a, b)
 	}
 }

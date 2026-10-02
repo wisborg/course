@@ -75,8 +75,9 @@ The system fonts are read on this machine and never copied anywhere.
 
 ### Map styles
 
-How a map looks -- its palette, its size, what its course is coloured by, and the colour,
-width, opacity and style of its lines -- is a style, made in three layers, each changing only what it says: the built-in defaults, then a
+How a map looks -- its palette and size, the size of its text and of the map's own names,
+its legend and distance markers, what its course is coloured by, and the colour, width,
+opacity, style and halo of its lines -- is a style, made in three layers, each changing only what it says: the built-in defaults, then a
 style file given with `--style`, then single settings given with `--set`. The file is YAML,
 and so may be JSON.
 
@@ -94,16 +95,27 @@ brings it up to the settings there are now.
 palette: dark            # light or dark; --palette is the same as --set palette=...
 width: 1920              # the picture, in pixels; --width and --height are the same
 height: 1080             #   as --set width=... and --set height=...
+text:
+  size: 13               # start, finish, distance numbers, legend, credit; scaled
+map:
+  label-size: auto       # the map's own names: auto is 13 pixels at any size, or a
+                         #   size on a map 1000 across, scaled with the picture
+legend:
+  position: auto         # a corner, auto, or none; --legend is the same
+markers:
+  every: auto            # kilometres between distance markers, auto, or none
 colouring:               # --colour, --grade-cap and --power-source are the same
   by: grade              # none, or pace, grade-adjusted-pace, elevation, grade, ...
   grade-cap: 15
   power-source: auto
+  width: 3               # the coloured line's width
 course:                  # the course, and with --separate every activity
   colour: "#ff5252"      # #rrggbb or #rrggbbaa, or auto for the palette's own
   colours: []            # with --separate, the 2nd, 3rd, ... activities' colours
   width: 4               # pixels on a map 1000 across, scaled with the map
   opacity: auto          # 0 to 1, or auto: 0.7, but 1 when a reference is drawn whole
   style: solid           # solid, dashed or dotted
+  halo: auto             # pixels either side, or auto: slim when opaque, else none
 activities:              # with --separate: settings for activity 1, 2, ... in turn
   - {}
   - colour: "#40c4ff"

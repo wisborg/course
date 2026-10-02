@@ -27,7 +27,7 @@ var mapStyleCmd = &cobra.Command{
 	Short: "Print the style a map would be drawn in, every setting with a comment",
 	Long: `style prints, as YAML, the style course map draws in with the same --style,
 --set and the flags that are settings of it -- --palette, --width, --height,
---colour, --grade-cap and --power-source: the built-in defaults, then the file's settings over
+--legend, --colour, --grade-cap and --power-source: the built-in defaults, then the file's settings over
 them, then the command line's. Every setting is there, with a comment saying
 what it takes, so
 
@@ -59,8 +59,8 @@ func init() {
 
 // buildStyle is the style the flags make: the defaults, the --style file
 // over them, then the command line -- --palette, --width, --height,
-// --colour, --grade-cap and --power-source, which are the same as --set
-// palette=... and so on, and then every --set in turn -- and checked.
+// --legend, --colour, --grade-cap and --power-source, which are the same as
+// --set palette=... and so on, and then every --set in turn -- and checked.
 func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	st := mapstyle.Default()
 	if styleOpts.file != "" {
@@ -76,6 +76,9 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	}
 	if cmd.Flags().Changed("height") {
 		st.Height = mapOpts.height
+	}
+	if cmd.Flags().Changed("legend") {
+		st.Legend.Position = mapOpts.legend
 	}
 	if cmd.Flags().Changed("colour") {
 		st.Colouring.By = mapOpts.colour
@@ -115,10 +118,10 @@ type drawn struct {
 //
 // An auto opacity is 0.7, so the map shows through the lines, but 1 when a
 // reference is drawn whole beside the course: two translucent lines over one
-// another mix into a third colour, and which is which is lost. A line drawn
-// opaque, auto or not, has a slim halo to hold it off the map, as an opaque
-// line always had; a translucent one has none, so as to hide no more of the
-// map than its own width.
+// another mix into a third colour, and which is which is lost. An auto halo
+// is a slim one on a line drawn opaque, auto or not, to hold it off the map,
+// as an opaque line always had, and none on a translucent one, so as to hide
+// no more of the map than its own width.
 func resolve(st mapstyle.Style, n int, refs []routemap.Reference, p render.Palette, o render.Overlay) drawn {
 	whole := false
 	for _, r := range refs {
@@ -165,6 +168,31 @@ func resolve(st mapstyle.Style, n int, refs []routemap.Reference, p render.Palet
 	return d
 }
 
+// mapLabelSize is the size of the map's own names on a picture drawn at
+// scale, in pixels: 13 at any size of picture, as they have always been,
+// unless st gives a size, which is scaled with the picture as everything
+// course draws is.
+func mapLabelSize(st mapstyle.Style, scale float64) float64 {
+	if st.Map.LabelSize == "auto" {
+		return baseTextSize
+	}
+	n, _ := strconv.ParseFloat(st.Map.LabelSize, 64) // checked by Validate
+	return n * scale
+}
+
+// markerEvery is the distance between st's distance markers, in metres, as
+// routemap.DistanceMarkersEvery takes it: 0 for auto, below 0 for none.
+func markerEvery(st mapstyle.Style) float64 {
+	switch st.Markers.Every {
+	case "auto":
+		return 0
+	case "none":
+		return -1
+	}
+	km, _ := strconv.ParseFloat(st.Markers.Every, 64) // checked by Validate
+	return km * 1000
+}
+
 // over is base with every setting o makes made.
 func over(base, o mapstyle.Line) mapstyle.Line {
 	if o.Width != nil {
@@ -175,6 +203,9 @@ func over(base, o mapstyle.Line) mapstyle.Line {
 	}
 	if o.Style != "" {
 		base.Style = o.Style
+	}
+	if o.Halo != "" {
+		base.Halo = o.Halo
 	}
 	return base
 }
@@ -190,7 +221,10 @@ func look(l mapstyle.Line, whole bool) routemap.Look {
 		opacity, _ = strconv.ParseFloat(l.Opacity, 64) // checked by Validate
 	}
 	halo := 0.0
-	if opacity >= 1 {
+	switch {
+	case l.Halo != "auto":
+		halo, _ = strconv.ParseFloat(l.Halo, 64) // checked by Validate
+	case opacity >= 1:
 		halo = 1
 	}
 	pattern := map[string]routemap.Pattern{"solid": routemap.Solid, "dashed": routemap.Dashed, "dotted": routemap.Dotted}[l.Style]

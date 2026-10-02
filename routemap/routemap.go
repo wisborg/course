@@ -39,10 +39,11 @@ func sizes(scale float64) (line, halo, dot, small float64) {
 }
 
 // Drawing is the course as lines and markers over a picture of v, its line
-// drawn in look. A gap in the recording is drawn as wide and as opaque, but
+// drawn in look and its distance markers every metres apart, as
+// DistanceMarkersEvery takes it. A gap in the recording is drawn as wide and as opaque, but
 // always dashed and in the gap's ink, so it is never taken for where the
 // course went.
-func Drawing(c *course.Course, v render.View, inks Inks, look Look, scale float64) render.Drawing {
+func Drawing(c *course.Course, v render.View, inks Inks, look Look, every, scale float64) render.Drawing {
 	if scale <= 0 {
 		scale = 1
 	}
@@ -61,7 +62,7 @@ func Drawing(c *course.Course, v render.View, inks Inks, look Look, scale float6
 		d.Lines = append(d.Lines, look.line(run.points, inks.Route, inks.Halo, scale))
 	}
 
-	for _, m := range DistanceMarkers(c) {
+	for _, m := range DistanceMarkersEvery(c, every) {
 		d.Markers = append(d.Markers, render.Marker{At: m.At, Ink: inks.Marker, Radius: small, Halo: halo, HaloInk: inks.Halo, Label: m.Label})
 	}
 	first, last := c.Points[0], c.Points[len(c.Points)-1]
@@ -200,8 +201,12 @@ func MarkerInterval(total float64) float64 {
 // fixes either side of its distance in proportion. A course without recorded
 // distance has none: they would be computed from the line, and the file did
 // not say how far anybody went.
-func DistanceMarkers(c *course.Course) []Marker {
-	if len(c.Points) < 2 {
+func DistanceMarkers(c *course.Course) []Marker { return DistanceMarkersEvery(c, 0) }
+
+// DistanceMarkersEvery is DistanceMarkers every metres apart: 0 for
+// MarkerInterval's, and less than 0 for none.
+func DistanceMarkersEvery(c *course.Course, every float64) []Marker {
+	if len(c.Points) < 2 || every < 0 {
 		return nil
 	}
 	for _, p := range c.Points {
@@ -210,7 +215,9 @@ func DistanceMarkers(c *course.Course) []Marker {
 		}
 	}
 	first, last := c.Points[0], c.Points[len(c.Points)-1]
-	every := MarkerInterval(last.Distance - first.Distance)
+	if every == 0 {
+		every = MarkerInterval(last.Distance - first.Distance)
+	}
 	if every == 0 {
 		return nil
 	}

@@ -342,18 +342,18 @@ func Widen(lo, hi, span float64) (float64, float64) {
 var gradientEdge = color.RGBA{R: 0x33, G: 0x33, B: 0x33, A: 0xff}
 
 // Gradient is a line through points coloured by the values at them, on the
-// scale s: thinner than a course's own line, with a thin dark edge, so the
-// map beside it still reads.
-func Gradient(points []render.Coord, values []float64, s render.Scale, scale float64) render.Gradient {
+// scale s, width pixels wide on a picture a thousand across, with a thin
+// dark edge to hold it off the map.
+func Gradient(points []render.Coord, values []float64, s render.Scale, width, scale float64) render.Gradient {
 	if scale <= 0 {
 		scale = 1
 	}
-	return render.Gradient{Points: points, Values: values, Scale: s, Width: 3 * scale, Halo: 0.8 * scale, HaloInk: gradientEdge}
+	return render.Gradient{Points: points, Values: values, Scale: s, Width: width * scale, Halo: 0.8 * scale, HaloInk: gradientEdge}
 }
 
 // Gradients are a course coloured by a value at each of its points: a
 // Gradient for each recorded stretch, so none is drawn across a gap.
-func Gradients(c *course.Course, values []float64, s render.Scale, scale float64) []render.Gradient {
+func Gradients(c *course.Course, values []float64, s render.Scale, width, scale float64) []render.Gradient {
 	var out []render.Gradient
 	for _, st := range Stretches(c) {
 		if st[1] == st[0] {
@@ -363,7 +363,7 @@ func Gradients(c *course.Course, values []float64, s render.Scale, scale float64
 		for _, p := range c.Points[st[0] : st[1]+1] {
 			pts = append(pts, render.Coord{Lat: p.Lat, Lon: p.Lon})
 		}
-		out = append(out, Gradient(pts, values[st[0]:st[1]+1], s, scale))
+		out = append(out, Gradient(pts, values[st[0]:st[1]+1], s, width, scale))
 	}
 	return out
 }

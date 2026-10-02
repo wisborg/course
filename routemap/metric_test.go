@@ -154,7 +154,7 @@ func TestGradients(t *testing.T) {
 	// And a last fix alone after a second gap, which is no line at all.
 	c.Points[99].Lon += 1000.0 / 109_600
 	c.Points[99].Elapsed += 10 * time.Minute
-	gs := Gradients(c, values, render.Scale{Min: 0, Max: 99}, 2)
+	gs := Gradients(c, values, render.Scale{Min: 0, Max: 99}, 3, 2)
 	if len(gs) != 2 {
 		t.Fatalf("%d gradients, want one each side of the gap", len(gs))
 	}

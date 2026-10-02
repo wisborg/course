@@ -15,8 +15,11 @@ func TestDefault(t *testing.T) {
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if s.Colouring != (Colouring{By: "none", GradeCap: 15, PowerSource: "auto"}) {
+	if s.Colouring != (Colouring{By: "none", GradeCap: 15, PowerSource: "auto", Width: 3}) {
 		t.Errorf("default colouring %+v", s.Colouring)
+	}
+	if s.Text.Size != 13 || s.Map.LabelSize != "auto" || s.Legend.Position != "auto" || s.Markers.Every != "auto" || s.Course.Halo != "auto" || s.Reference.Halo != "auto" {
+		t.Errorf("default text, map, legend, markers, halos: %+v", s)
 	}
 	if s.Width != 1600 || s.Height != 1000 {
 		t.Errorf("default size %d by %d", s.Width, s.Height)
@@ -89,6 +92,13 @@ func TestSet(t *testing.T) {
 		"palette=light",
 		"width=4800",
 		"colouring.by=grade",
+		"text.size=20",
+		"map.label-size=9",
+		"legend.position=none",
+		"markers.every=none",
+		"markers.every=2.5",
+		"colouring.width=5",
+		"course.halo=2",
 		"colouring.grade-cap=30",
 		"height=3000",
 	} {
@@ -96,7 +106,8 @@ func TestSet(t *testing.T) {
 			t.Fatalf("--set %s: %v", set, err)
 		}
 	}
-	if s.Course.Colour != "#d32f2f" || *s.Course.Width != 4.5 || s.Palette != "light" || s.Course.Style != "solid" || s.Width != 4800 || s.Height != 3000 || s.Colouring.By != "grade" || s.Colouring.GradeCap != 30 {
+	if s.Course.Colour != "#d32f2f" || *s.Course.Width != 4.5 || s.Palette != "light" || s.Course.Style != "solid" || s.Width != 4800 || s.Height != 3000 || s.Colouring.By != "grade" || s.Colouring.GradeCap != 30 ||
+		s.Text.Size != 20 || s.Map.LabelSize != "9" || s.Legend.Position != "none" || s.Markers.Every != "2.5" || s.Colouring.Width != 5 || s.Course.Halo != "2" {
 		t.Errorf("course and palette: %+v", s)
 	}
 	if len(s.Reference.Colours) != 2 || s.Reference.Colours[1] != "#445566" {
@@ -119,7 +130,9 @@ func TestSet(t *testing.T) {
 		{"activities.two.width=3", "numbered from 1"},
 		{"palette.dark=1", "palette"},
 		{"width.x=1", "width is one setting"},
-		{"colouring.metric=pace", `no such setting "metric"; colouring has by, grade-cap, power-source`},
+		{"colouring.metric=pace", `no such setting "metric"; colouring has by, grade-cap, power-source, width`},
+		{"text.colour=#000000", `no such setting "colour"; text has size`},
+		{"markers.size=3", `no such setting "size"; markers has every`},
 	} {
 		s := Default()
 		if err := s.Set(c.set); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -134,6 +147,15 @@ func TestValidate(t *testing.T) {
 		{"palette=sepia", "palette"},
 		{"width=63", "width: 63 pixels is too small"},
 		{"colouring.by=stride", "colouring.by: \"stride\" is not one"},
+		{"text.size=0", "text.size"},
+		{"map.label-size=big", "map.label-size"},
+		{"map.label-size=-3", "map.label-size"},
+		{"legend.position=middle", "legend.position"},
+		{"markers.every=0", "markers.every"},
+		{"markers.every=often", "markers.every"},
+		{"colouring.width=0", "colouring.width"},
+		{"course.halo=-1", "course.halo"},
+		{"references.Loop.halo=wide", "references.Loop.halo"},
 		{"colouring.grade-cap=0", "colouring.grade-cap"},
 		{"colouring.power-source=strid", "colouring.power-source: \"strid\" is invalid; use auto, stryd, or native"},
 		{"height=0", "height: 0 pixels is too small"},
@@ -175,7 +197,7 @@ func TestWrite(t *testing.T) {
 	}
 	out := b.String()
 	for _, want := range []string{
-		"palette: light", "by: none", "grade-cap: 15", "power-source: auto", "width: 1600", "height: 1000", "# The picture's width in pixels", "colours: []", "width: 2.25", "style: dashed",
+		"palette: light", "size: 13", "label-size: auto", "position: auto", "every: auto", "halo: auto", "by: none", "grade-cap: 15", "power-source: auto", "width: 1600", "height: 1000", "# The picture's width in pixels", "colours: []", "width: 2.25", "style: dashed",
 		"# A hex colour", "# solid, dashed or dotted.", "colour: auto # light palette: #1b1b1b",
 		"Loop:", "width: 6",
 	} {

@@ -69,6 +69,8 @@ type colourOptions struct {
 	// power is --power-source; powerGiven whether it was typed.
 	power      string
 	powerGiven bool
+	// width is the coloured line's, in pixels on a map 1000 across.
+	width float64
 }
 
 // powerSources are --power-source's values: the same flag, the same three
@@ -265,7 +267,7 @@ func colourBy(cs []*course.Course, name string, o colourOptions, scale float64) 
 		report: fmt.Sprintf("%-10s by %s, %s (blue) to %s (red)", "coloured", label, r.low, r.high),
 	}
 	for k, c := range cs {
-		for _, g := range routemap.Gradients(c, vs[k], r.scale, scale) {
+		for _, g := range routemap.Gradients(c, vs[k], r.scale, o.width, scale) {
 			g.Peaks = peaks
 			col.gradients = append(col.gradients, g)
 		}

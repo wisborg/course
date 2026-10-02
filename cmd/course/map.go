@@ -11,7 +11,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -88,7 +87,7 @@ func init() {
 	f.StringVar(&mapOpts.language, "lang", "", "write the map's names in this language where the map has them, e.g. en; default is each place's own")
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
-	f.StringVar(&mapOpts.legend, "legend", "auto", "where the legend goes: top-left, top-right, bottom-left or bottom-right; auto for whichever of them covers least of the course; none for no legend")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.legend, "legend", "auto", "where the legend goes: top-left, top-right, bottom-left or bottom-right; auto for whichever of them covers least of the course; none for no legend; the same as --set legend.position=..., and before any --set")
 	f.StringArrayVar(&mapOpts.titles, "title", nil, "what the legend calls the course (default: its file's name); with --separate, once for each activity, in the order given")
 	f.BoolVar(&mapOpts.separate, "separate", false, "draw several files as separate activities, each in its own colour with its own start and finish, rather than merged into one")
 	mapCmd.PersistentFlags().StringVar(&mapOpts.colour, "colour", "none", "colour the course by a metric along it: pace, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power or cadence; the same as --set colouring.by=..., and before any --set")
@@ -129,9 +128,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		metric: metric, compare: mapOpts.compare,
 		gradeCap: st.Colouring.GradeCap, gradeCapGiven: cmd.Flags().Changed("grade-cap"),
 		power: st.Colouring.PowerSource, powerGiven: cmd.Flags().Changed("power-source"),
-	}
-	if !slices.Contains(append([]string{"auto", "none"}, legendCorners...), mapOpts.legend) {
-		return fmt.Errorf("--legend %q: use %s, auto or none", mapOpts.legend, strings.Join(legendCorners, ", "))
+		width: st.Colouring.Width,
 	}
 	names, err := activityNames(args, mapOpts.titles, mapOpts.separate)
 	if err != nil {
@@ -210,24 +207,25 @@ func runMap(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	img, res, err := basemap(cmd, src, manifest, view, palette)
+	scale := float64(max(view.Width, view.Height)) / 1000
+	img, res, err := basemap(cmd, src, manifest, view, palette, mapLabelSize(st, scale))
 	if err != nil {
 		return err
 	}
-	scale := float64(max(view.Width, view.Height)) / 1000
-	face := faceAt(baseTextSize * scale)
+	face := faceAt(st.Text.Size * scale)
 	inks := routemap.InksFor(palette, overlay)
 	look := resolve(st, len(activities), refs, palette, overlay)
 	own := inks
 	own.Route = look.actInks[0]
-	drawing := routemap.Drawing(c, view, own, look.actLooks[0], scale)
+	every := markerEvery(st)
+	drawing := routemap.Drawing(c, view, own, look.actLooks[0], every, scale)
 	if len(activities) > 1 {
-		drawing = routemap.ActivitiesDrawing(activities, view, inks, look.actInks, look.actLooks, scale)
+		drawing = routemap.ActivitiesDrawing(activities, view, inks, look.actInks, look.actLooks, every, scale)
 	}
 	var col *colouring
 	switch {
 	case mapOpts.compare != "":
-		col, err = compareWith(c, name, mapOpts.compare, scale)
+		col, err = compareWith(c, name, mapOpts.compare, st.Colouring.Width, scale)
 	case metric != "":
 		col, err = colourBy(activities, name, colours, scale)
 	}
@@ -252,8 +250,9 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	// A legend is drawn when there is more than the course to tell apart,
 	// or when one was asked for by name or place; never with --legend none.
-	asked := len(mapOpts.titles) > 0 || (mapOpts.legend != "auto" && mapOpts.legend != "none")
-	if (len(refs) > 0 || col != nil || asked || len(activities) > 1) && mapOpts.legend != "none" {
+	position := st.Legend.Position
+	asked := len(mapOpts.titles) > 0 || (position != "auto" && position != "none")
+	if (len(refs) > 0 || col != nil || asked || len(activities) > 1) && position != "none" {
 		var legend []entry
 		switch {
 		case col == nil && len(activities) > 1:
@@ -278,7 +277,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		}
 		size, margin := legendSize(legend, face, scale), metricsFor(face, scale).pad
 		credit := creditSpace(manifest.Attribution, face, margin)
-		corner := mapOpts.legend
+		corner := position
 		if corner == "auto" {
 			// What the legend would hide: the course, its markers and
 			// labels and references, drawn again on nothing.
@@ -294,7 +293,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if err := writePNG(out, img); err != nil {
 		return err
 	}
-	writeMapReport(cmd.OutOrStdout(), out, c, view, res, len(routemap.DistanceMarkers(c)))
+	writeMapReport(cmd.OutOrStdout(), out, c, view, res, len(routemap.DistanceMarkersEvery(c, every)), every < 0)
 	if col != nil {
 		fmt.Fprintln(cmd.OutOrStdout(), col.report)
 	}
@@ -427,7 +426,7 @@ const compareAround = 30
 
 // compareWith colours c against the run name names. How finely is the
 // drawing's to decide, from the view.
-func compareWith(c *course.Course, courseName, name string, scale float64) (*colouring, error) {
+func compareWith(c *course.Course, courseName, name string, width, scale float64) (*colouring, error) {
 	refName, ref, err := resolveCourse(name)
 	if err != nil {
 		return nil, fmt.Errorf("--compare %w", err)
@@ -442,7 +441,7 @@ func compareWith(c *course.Course, courseName, name string, scale float64) (*col
 	}
 	last := len(p.Run) - 1
 	return &colouring{
-		gradients: []render.Gradient{routemap.Gradient(pts, p.Faster(compareAround), compareRamp.scale, scale)},
+		gradients: []render.Gradient{routemap.Gradient(pts, p.Faster(compareAround), compareRamp.scale, width, scale)},
 		legend:    courseName + " against " + refName,
 		ramp:      compareRamp,
 		report:    fmt.Sprintf("%-10s against %s, %.2f km of it: %s", "compared", refName, float64(last)*p.Step/1000, gapText(p.Gap(last))),
@@ -608,7 +607,7 @@ func mapNeed(root string, m slice.Manifest, src *slice.Source, v render.View) (n
 // basemap is the map under the course. With no map to draw from, it is the
 // palette's background: a course over nothing is still a picture of the
 // course, and the report says there was no map.
-func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, v render.View, p render.Palette) (*image.RGBA, *render.Result, error) {
+func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, v render.View, p render.Palette, labelSize float64) (*image.RGBA, *render.Result, error) {
 	blank := func() *image.RGBA {
 		img := image.NewRGBA(image.Rect(0, 0, v.Width, v.Height))
 		draw.Draw(img, img.Bounds(), image.NewUniform(p.Background), image.Point{}, draw.Src)
@@ -619,7 +618,7 @@ func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, v render.V
 	}
 	r, err := render.New(src, render.Options{
 		Style: render.BasemapStyle(), Palette: p, Attribution: m.Attribution, Language: mapOpts.language,
-		LabelFace: faceAt(baseTextSize), LabelFaceFor: func(s float64) font.Face { return faceAt(baseTextSize * s) },
+		LabelFace: faceAt(labelSize), LabelFaceFor: func(s float64) font.Face { return faceAt(labelSize * s) },
 	})
 	if err != nil {
 		return nil, nil, err
@@ -652,7 +651,7 @@ func writePNG(path string, img image.Image) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, res *render.Result, markers int) {
+func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, res *render.Result, markers int, noneAsked bool) {
 	fmt.Fprintf(w, "%-10s %s, %d by %d\n", "map", out, v.Width, v.Height)
 	if res == nil {
 		fmt.Fprintf(w, "%-10s none: the store holds nothing of this view, so the course is drawn on a blank ground\n", "basemap")
@@ -668,6 +667,8 @@ func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, re
 		fmt.Fprintf(w, "%-10s %d distance markers\n", "markers", markers)
 	case !measured(c):
 		fmt.Fprintf(w, "%-10s none: the file records no distance\n", "markers")
+	case noneAsked:
+		fmt.Fprintf(w, "%-10s none, as the style asks\n", "markers")
 	}
 }
 

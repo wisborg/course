@@ -153,7 +153,7 @@ func TestMapLegendFlags(t *testing.T) {
 	}
 
 	resetNow(mapCmd)
-	if _, err := run(t, "map", "--store", store, "--out", out, "--legend", "middle", run1); err == nil || !strings.Contains(err.Error(), "top-left, top-right, bottom-left, bottom-right, auto or none") {
+	if _, err := run(t, "map", "--store", store, "--out", out, "--legend", "middle", run1); err == nil || !strings.Contains(err.Error(), `legend.position: "middle" is not one; use auto, top-left, top-right, bottom-left, bottom-right, none`) {
 		t.Errorf("--legend middle: %v", err)
 	}
 }
@@ -324,5 +324,55 @@ func TestLegendSamplesAreBrokenAsTheirLines(t *testing.T) {
 	solid, dashed, dotted := runs(routemap.Solid), runs(routemap.Dashed), runs(routemap.Dotted)
 	if solid != 1 || dashed < 2 || dotted <= dashed {
 		t.Errorf("runs of ink: solid %d, dashed %d, dotted %d; want 1, a few, and more", solid, dashed, dotted)
+	}
+}
+
+// The legend follows the style: a corner set with --set asks for a legend on
+// a lone course, there; and a larger text.size makes it larger.
+func TestMapLegendFromItsStyle(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+	t.Cleanup(func() { styleOpts.file, styleOpts.sets = "", nil })
+
+	dir := t.TempDir()
+	run1, out := filepath.Join(dir, "run.gpx"), filepath.Join(dir, "run.png")
+	writeLine(t, run1, 10, 20, 0.0002, 50)
+	plated := func(img image.Image, x, y int) bool {
+		lum := func(c color.Color) uint32 { r, g, b, _ := c.RGBA(); return r + g + b }
+		return lum(img.At(x, y)) > lum(img.At(600, 850))+3000
+	}
+	draw := func(sets ...string) image.Image {
+		t.Helper()
+		resetNow(mapCmd)
+		styleOpts.file, styleOpts.sets = "", nil
+		args := []string{"map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "1200", "--height", "900"}
+		for _, s := range sets {
+			args = append(args, "--set", s)
+		}
+		if o, err := run(t, append(args, run1)...); err != nil {
+			t.Fatalf("map %v: %v\n%s", sets, err, o)
+		}
+		f, err := os.Open(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		img, err := png.Decode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return img
+	}
+	if img := draw("legend.position=top-right"); !plated(img, 1188, 12) || plated(img, 12, 12) {
+		t.Error("legend.position=top-right on a lone course: no legend in the top right")
+	}
+	// The legend of a course called run, at the default size, is narrow; at
+	// three times the text it reaches much further.
+	if img := draw("legend.position=top-left"); plated(img, 110, 20) {
+		t.Fatal("the default legend already reaches 110 px; the test needs it narrow")
+	}
+	if img := draw("legend.position=top-left", "text.size=39"); !plated(img, 110, 20) {
+		t.Error("text.size=39: the legend is no larger")
 	}
 }
