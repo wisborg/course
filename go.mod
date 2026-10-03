@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
-	github.com/wisborg/fitactivity v0.9.0
+	github.com/wisborg/fitactivity v0.10.0
 	github.com/wisborg/osmbase v0.20.0
 	github.com/wisborg/output v0.3.0
 	go.yaml.in/yaml/v3 v3.0.5
