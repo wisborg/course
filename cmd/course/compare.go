@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/output"
 	"github.com/wisborg/output/table"
 
@@ -51,7 +52,7 @@ func init() {
 	f.StringVar(&compareOpts.reference, "reference", "", "the run to compare with: a stored reference's name or a file (required)")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
 	f.Float64Var(&compareOpts.near, "near", 0, "how far from the course, in metres, is still on it (default 25)")
-	f.Float64Var(&compareOpts.split, "split", 1, "how long each split is, in kilometres along the reference")
+	f.Float64Var(&compareOpts.split, "split", 1, "how long each split is along the reference, in the distance unit: kilometres, or miles with --units imperial")
 	compareOpts.format = formatFlag{Format: output.Text}
 	f.Var(&compareOpts.format, "format", "output format: text, csv, json or yaml")
 	compareCmd.MarkFlagRequired("reference")
@@ -59,8 +60,16 @@ func init() {
 }
 
 func runCompare(cmd *cobra.Command, args []string) error {
+	u, err := unitsFor(cmd)
+	if err != nil {
+		return err
+	}
+	shown, err := unitsShown(cmd, compareOpts.format.Format)
+	if err != nil {
+		return err
+	}
 	if !(compareOpts.split > 0) {
-		return fmt.Errorf("--split must be more than 0 km, not %v", compareOpts.split)
+		return fmt.Errorf("--split must be more than 0 %s, not %v", u.Distance.Name, compareOpts.split)
 	}
 	c, err := course.Read(args...)
 	if err != nil {
@@ -74,12 +83,13 @@ func runCompare(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("against %s: %w", name, err)
 	}
-	splits := p.Splits(1000 * compareOpts.split)
+	// --split is in the distance unit: a mile a split under imperial.
+	splits := p.Splits(u.Distance.ToSI(compareOpts.split))
 	if compareOpts.format.Format == output.Text {
-		writeComparison(cmd.OutOrStdout(), name, p, splits)
+		writeComparison(cmd.OutOrStdout(), name, p, splits, u)
 		return nil
 	}
-	return output.Document{Data: jsonComparison(name, p, splits), Table: splitTable(splits)}.Write(cmd.OutOrStdout(), compareOpts.format.Format)
+	return output.Document{Data: jsonComparison(name, p, splits), Table: splitTable(splits, shown)}.Write(cmd.OutOrStdout(), compareOpts.format.Format)
 }
 
 // gapWords is a gap in words: behind, ahead, or level.
@@ -109,35 +119,35 @@ func splitWords(run, ref time.Duration) string {
 // splitTable has a row a split: where it ends, both times over it, and how
 // they compare. Words rather than signed numbers, so nobody has to remember
 // which way plus means.
-func splitTable(splits []compare.Split) *table.Table {
+func splitTable(splits []compare.Split, u units.Set) *table.Table {
 	t := table.New(
-		table.Column{Header: "km", Align: table.Right, Format: "%.2f"},
+		table.Column{Header: u.Distance.Name, Align: table.Right, Format: "%.2f"},
 		table.Column{Header: "run", Align: table.Right},
 		table.Column{Header: "reference", Align: table.Right},
 		table.Column{Header: "split", Align: table.Right},
 		table.Column{Header: "gap", Align: table.Right},
 	)
 	for _, s := range splits {
-		t.MustAppend(s.To/1000, clock(s.Run), clock(s.Ref), splitWords(s.Run, s.Ref), gapWords(s.Gap))
+		t.MustAppend(u.Distance.FromSI(s.To), clock(s.Run), clock(s.Ref), splitWords(s.Run, s.Ref), gapWords(s.Gap))
 	}
 	return t
 }
 
 // writeComparison is the comparison for a person: which stretch of the run
 // was compared, the splits, and the stops under them.
-func writeComparison(w io.Writer, name string, p *compare.Profile, splits []compare.Split) {
+func writeComparison(w io.Writer, name string, p *compare.Profile, splits []compare.Split, u units.Set) {
 	m := p.Match
 	last := len(p.Run) - 1
 	length := float64(last) * p.Step
-	of := fmt.Sprintf("%.2f km of it", length/1000)
+	of := distance(length, u) + " of it"
 	if p.From > 0 {
 		// The run joined the reference late; say where, or the splits'
-		// kilometres would seem to start from nowhere.
-		of = fmt.Sprintf("%.2f km of it, from %.2f to %.2f km along", length/1000, p.From/1000, (p.From+length)/1000)
+		// distances would seem to start from nowhere.
+		of = fmt.Sprintf("%s of it, from %.2f to %s along", distance(length, u), u.Distance.FromSI(p.From), distance(p.From+length, u))
 	}
 	fmt.Fprintf(w, "against %s, %s, from %s to %s into the run: %s\n\n",
 		name, of, clock(m.FromTime), clock(m.ToTime), gapText(p.Gap(last)))
-	fmt.Fprint(w, splitTable(splits).String())
+	fmt.Fprint(w, splitTable(splits, u).String())
 	// Both runs' stops, in the order they come along the course, so a stop
 	// is read beside the split it is in.
 	type stop struct {
@@ -146,10 +156,10 @@ func writeComparison(w io.Writer, name string, p *compare.Profile, splits []comp
 	}
 	var stops []stop
 	for _, s := range m.Stops {
-		stops = append(stops, stop{s.At, fmt.Sprintf("stopped at %s for %s, %.2f km along the course", clock(s.From), s.Duration.Round(time.Second), s.At/1000)})
+		stops = append(stops, stop{s.At, fmt.Sprintf("stopped at %s for %s, %s along the course", clock(s.From), s.Duration.Round(time.Second), distance(s.At, u))})
 	}
 	for _, s := range p.RefStops {
-		stops = append(stops, stop{s.At, fmt.Sprintf("the reference stopped for %s, %.2f km along the course", s.Duration.Round(time.Second), s.At/1000)})
+		stops = append(stops, stop{s.At, fmt.Sprintf("the reference stopped for %s, %s along the course", s.Duration.Round(time.Second), distance(s.At, u))})
 	}
 	sort.SliceStable(stops, func(i, j int) bool { return stops[i].at < stops[j].at })
 	if len(stops) > 0 {

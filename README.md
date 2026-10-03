@@ -55,7 +55,7 @@ answer and writes into its JSON; see [NOTICE](NOTICE).
 ```
 
 `map` draws the course over the map: the route, its start and finish, and a marker every
-so many kilometres where the file recorded distance. A stretch the recording has no fixes
+so many kilometres -- or miles, see [Units](#units) -- where the file recorded distance. A stretch the recording has no fixes
 for -- a tunnel, a flight over an ocean -- is dashed, because the straight line across it is
 not where the course went. The picture carries the map data's credit in its corner.
 
@@ -76,7 +76,7 @@ The system fonts are read on this machine and never copied anywhere.
 ### Map styles
 
 How a map looks -- its palette and size, the size of its text and of the map's own names,
-its legend and distance markers, what its course is coloured by, and the colour, width,
+its legend and distance markers, the units it is labelled in, what its course is coloured by, and the colour, width,
 opacity, style and halo of its lines -- is a style, made in three layers, each changing only what it says: the built-in defaults, then a
 style file given with `--style`, then single settings given with `--set`. The file is YAML,
 and so may be JSON.
@@ -103,9 +103,15 @@ map:
 legend:
   position: auto         # a corner, auto, or none; --legend is the same
 markers:
-  every: auto            # kilometres between distance markers, auto, or none
+  every: auto            # distance units between distance markers, auto, or none
+units:                   # --units and --unit are the same; see Units
+  system: metric         # metric or imperial
+  distance: auto         # km, mi or nmi, or auto for the system's
+  elevation: auto        # m or ft
+  speed: auto            # km/h, mph, kn or m/s
+  pace: auto             # min/km or min/mi
 colouring:               # --colour, --grade-cap and --power-source are the same
-  by: grade              # none, or pace, grade-adjusted-pace, elevation, grade, ...
+  by: grade              # none, or pace, speed, grade-adjusted-pace, elevation, ...
   grade-cap: 15
   power-source: auto
   width: 3               # the coloured line's width
@@ -174,6 +180,7 @@ even on a map with nothing else in it.
 
 ```
 ./course map run.fit --colour pace
+./course map ride.fit --colour speed
 ./course map ride.fit --colour elevation
 ./course map walk.fit --colour grade
 ./course map hike.fit --colour grade --grade-cap 30
@@ -184,16 +191,17 @@ even on a map with nothing else in it.
 ./course map hilly.fit --colour grade-adjusted-pace
 ```
 
-The metrics are `pace`, `grade-adjusted-pace`, `elevation`, `grade`, `heart-rate`, `power`,
+The metrics are `pace`, `speed`, `grade-adjusted-pace`, `elevation`, `grade`, `heart-rate`, `power`,
 `air-power` and `cadence`.
 
 `--colour` colours the course by a metric along it, from blue at its slowest or lowest to red
-at its fastest or highest, with a colour bar in the legend giving the pace or height at each
-end. The ends are set by the course itself, with the few most extreme values at each end left
+at its fastest or highest, with a colour bar in the legend giving the pace, speed or height at each
+end, in the units asked for. The ends are set by the course itself, with the few most extreme values at each end left
 out, so a sprint finish or a standstill does not squeeze the rest into one colour; an even
 run or a flat course is shown over at least 5% of its speed either side, or 20 m of height,
-rather than spreading the whole ramp over noise. Pace is taken over 30 m either side of each
-point.
+rather than spreading the whole ramp over noise. Pace and speed are taken over 30 m either
+side of each point; `speed` is the same colouring as `pace`, read the way a cyclist or a
+pilot reads it.
 
 `grade` is the slope: red climbing, blue descending, green level in the middle of a scale
 that reaches the course's own steepest grade either way -- at least 3%, so level ground is not
@@ -301,8 +309,43 @@ and how far ahead or behind the run was at the end of each, with any stops liste
 ./course compare today.fit --reference rhodes --split 0.5
 ```
 
+`--split` is in the distance unit: half a kilometre here, half a mile with `--units imperial`.
+
 The design and what was measured on real courses are in
 [docs/references.md](docs/references.md).
+
+## Units
+
+```
+./course compare today.fit --reference rhodes --units imperial
+./course map flight.kml --units imperial --unit distance=nmi --unit speed=kn
+./course map ride.fit --colour speed --unit speed=m/s
+```
+
+Every command reads and writes distance, elevation, speed and pace in metric unless told
+otherwise. `--units imperial` changes them all -- miles, feet, mph, min/mi -- and
+`--unit QUANTITY=UNIT` changes one, after the system, for the mixtures some activities are
+read in: a flight has its altitude in feet, its distance in nautical miles and its speed in
+knots. The units are the common ones for each:
+
+| quantity    | units                   |
+|-------------|-------------------------|
+| `distance`  | `km`, `mi`, `nmi`       |
+| `elevation` | `m`, `ft`               |
+| `speed`     | `km/h`, `mph`, `kn`, `m/s` |
+| `pace`      | `min/km`, `min/mi`      |
+
+A short distance -- how far a run strayed from its reference in `match` -- is in the
+elevation unit, metres or feet. A number given in a distance follows the distance unit:
+`--split` for `compare` and `markers.every` for `map` are miles under `--units imperial`.
+`--from-km`/`--to-km` stay in kilometres, as their name says, and `--near` in metres.
+
+For a map the units are part of its style, the `units:` group, so a theme can carry them;
+`--units` and `--unit` set the same settings. Only what is written for a person changes:
+`--format json`, `csv` and `yaml` stay in metres, seconds and kilometres whatever is asked,
+so a program reading them reads one thing. The conversions are
+[fitactivity's](https://github.com/wisborg/fitactivity/tree/main/units), shared with the tools
+that draw the same activities.
 
 ## Fetching what the store lacks
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/osmbase/locate"
 	"github.com/wisborg/output"
 
@@ -78,7 +79,8 @@ func TestSummaryTableHasOnlyNamedLevels(t *testing.T) {
 		{Places: []locate.Match{{Level: locate.Country, Name: "Land"}}},
 		{Places: []locate.Match{{Level: locate.Water, Name: "Sea"}}},
 	}}
-	out := summaryTable(s).String()
+	metric, _ := units.Of(units.Metric)
+	out := summaryTable(s, metric).String()
 	header := strings.Fields(strings.SplitN(out, "\n", 2)[0])
 	if strings.Join(header, " ") != "elapsed country water" {
 		t.Errorf("header %v", header)

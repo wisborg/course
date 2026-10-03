@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/output"
 	"github.com/wisborg/output/table"
 
@@ -37,7 +38,8 @@ with --reference, stored or as files. The reference is aligned with the
 activity in order, so the way back of an out-and-back course is not taken for
 the way out, and a course run backwards is not a match.
 
---near is how far from the course is still on it, in metres. GPS among tall
+--near is how far from the course is still on it, in metres whatever the
+units shown. GPS among tall
 buildings wanders up to about 20 m from a course followed exactly; the
 default, 25, is just above that.`,
 	Args: cobra.MinimumNArgs(1),
@@ -55,6 +57,10 @@ func init() {
 }
 
 func runMatch(cmd *cobra.Command, args []string) error {
+	u, err := unitsShown(cmd, matchOpts.format.Format)
+	if err != nil {
+		return err
+	}
 	c, err := course.Read(args...)
 	if err != nil {
 		return err
@@ -68,10 +74,10 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	}
 	ms := match.Find(c, refs, match.Options{Near: matchOpts.near})
 	if matchOpts.format.Format == output.Text {
-		writeMatches(cmd.OutOrStdout(), ms, c.Timed)
+		writeMatches(cmd.OutOrStdout(), ms, c.Timed, u)
 		return nil
 	}
-	return output.Document{Data: jsonMatches(ms, c.Timed), Table: matchTable(ms, c.Timed)}.Write(cmd.OutOrStdout(), matchOpts.format.Format)
+	return output.Document{Data: jsonMatches(ms, c.Timed), Table: matchTable(ms, c.Timed, u)}.Write(cmd.OutOrStdout(), matchOpts.format.Format)
 }
 
 type jsonStretch struct {
@@ -167,27 +173,27 @@ func matchReferences(names []string) ([]match.Reference, error) {
 	return out, nil
 }
 
-func matchTable(ms []match.Match, timed bool) *table.Table {
+func matchTable(ms []match.Match, timed bool, u units.Set) *table.Table {
 	cols := []table.Column{
 		{Header: "reference"},
-		{Header: "from km", Align: table.Right, Format: "%.2f"},
-		{Header: "to km", Align: table.Right, Format: "%.2f"},
+		{Header: "from " + u.Distance.Name, Align: table.Right, Format: "%.2f"},
+		{Header: "to " + u.Distance.Name, Align: table.Right, Format: "%.2f"},
 	}
 	if timed {
 		cols = append(cols, table.Column{Header: "from", Align: table.Right}, table.Column{Header: "to", Align: table.Right})
 	}
 	cols = append(cols,
 		table.Column{Header: "covered", Align: table.Right, Format: "%.0f%%"},
-		table.Column{Header: "median m", Align: table.Right, Format: "%.0f"},
-		table.Column{Header: "worst m", Align: table.Right, Format: "%.0f"},
+		table.Column{Header: "median " + u.Elevation.Name, Align: table.Right, Format: "%.0f"},
+		table.Column{Header: "worst " + u.Elevation.Name, Align: table.Right, Format: "%.0f"},
 	)
 	t := table.New(cols...)
 	for _, m := range ms {
-		row := []any{m.Reference, m.From / 1000, m.To / 1000}
+		row := []any{m.Reference, u.Distance.FromSI(m.From), u.Distance.FromSI(m.To)}
 		if timed {
 			row = append(row, clock(m.FromTime), clock(m.ToTime))
 		}
-		row = append(row, 100*m.Coverage, m.Median, m.Worst)
+		row = append(row, 100*m.Coverage, u.Elevation.FromSI(m.Median), u.Elevation.FromSI(m.Worst))
 		t.MustAppend(row...)
 	}
 	return t
@@ -195,25 +201,26 @@ func matchTable(ms []match.Match, timed bool) *table.Table {
 
 // writeMatches is the matches for a person: the table, then under it each
 // match's detours, which a table has no room for.
-func writeMatches(w io.Writer, ms []match.Match, timed bool) {
+func writeMatches(w io.Writer, ms []match.Match, timed bool, u units.Set) {
 	if len(ms) == 0 {
 		fmt.Fprintln(w, "no reference matched")
 		return
 	}
-	fmt.Fprint(w, matchTable(ms, timed).String())
+	fmt.Fprint(w, matchTable(ms, timed, u).String())
 	for _, m := range ms {
 		if len(m.Missed) == 0 && len(m.Excursions) == 0 && len(m.Stops) == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "\n%s, %.2f-%.2f km:\n", m.Reference, m.From/1000, m.To/1000)
+		d := u.Distance.FromSI
+		fmt.Fprintf(w, "\n%s, %.2f-%s:\n", m.Reference, d(m.From), distance(m.To, u))
 		for _, s := range m.Missed {
-			fmt.Fprintf(w, "  missed the course from %.2f to %.2f km along it, up to %.0f m off\n", s.From/1000, s.To/1000, s.Farthest)
+			fmt.Fprintf(w, "  missed the course from %.2f to %s along it, up to %s off\n", d(s.From), distance(s.To, u), short(s.Farthest, u))
 		}
 		for _, s := range m.Excursions {
-			fmt.Fprintf(w, "  left it from %.2f to %.2f km into the stretch, up to %.0f m off\n", s.From/1000, s.To/1000, s.Farthest)
+			fmt.Fprintf(w, "  left it from %.2f to %s into the stretch, up to %s off\n", d(s.From), distance(s.To, u), short(s.Farthest, u))
 		}
 		for _, s := range m.Stops {
-			fmt.Fprintf(w, "  stopped at %s for %s, %.2f km along the course, %.0f m from it\n", clock(s.From), s.Duration.Round(time.Second), s.At/1000, s.Off)
+			fmt.Fprintf(w, "  stopped at %s for %s, %s along the course, %s from it\n", clock(s.From), s.Duration.Round(time.Second), distance(s.At, u), short(s.Off, u))
 		}
 	}
 }

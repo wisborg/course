@@ -40,7 +40,7 @@ func TestDrawingGapsKeepTheirDashes(t *testing.T) {
 		c.Points[i].Lon += 0.01
 	}
 	inks := Inks{Route: color.RGBA{R: 9, A: 255}, Gap: color.RGBA{G: 9, A: 255}}
-	d := Drawing(c, view(c), inks, Look{Width: 4, Opacity: 1, Pattern: Dotted}, 0, 1)
+	d := Drawing(c, view(c), inks, Look{Width: 4, Opacity: 1, Pattern: Dotted}, Spacing{}, 1)
 	var gap, route bool
 	for _, l := range d.Lines {
 		switch l.Ink {

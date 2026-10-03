@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/output"
 	"github.com/wisborg/output/table"
 
@@ -51,11 +52,15 @@ var referenceAdd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		u, err := unitsFor(cmd)
+		if err != nil {
+			return err
+		}
 		m, err := s.Add(args[0], args[1], addOpts.aliases, crop, addOpts.note)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "stored %q, %.2f km%s, in %s\n", m.Name, m.Summary.LengthM/1000, loopText(m.Summary), s.Dir)
+		fmt.Fprintf(cmd.OutOrStdout(), "stored %q, %s%s, in %s\n", m.Name, distance(m.Summary.LengthM, u), loopText(m.Summary), s.Dir)
 		return nil
 	},
 }
@@ -90,19 +95,23 @@ var referenceList = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		u, err := unitsShown(cmd, listFormat.Format)
+		if err != nil {
+			return err
+		}
 		if len(all) == 0 && listFormat.Format == output.Text {
 			fmt.Fprintf(cmd.OutOrStdout(), "no references in %s; add one with \"course reference add NAME FILE\"\n", s.Dir)
 			return nil
 		}
 		t := table.New(
 			table.Column{Header: "name"}, table.Column{Header: "also"},
-			table.Column{Header: "km", Align: table.Right, Format: "%.2f"},
+			table.Column{Header: u.Distance.Name, Align: table.Right, Format: "%.2f"},
 			table.Column{Header: "loop"}, table.Column{Header: "added"}, table.Column{Header: "note"},
 		)
 		for _, m := range all {
 			length, loop := 0.0, ""
 			if m.Summary != nil {
-				length = m.Summary.LengthM / 1000
+				length = u.Distance.FromSI(m.Summary.LengthM)
 				if m.Summary.Loop {
 					loop = "loop"
 				}
@@ -132,24 +141,28 @@ var referenceShow = &cobra.Command{
 		if listFormat.Format != output.Text {
 			return output.Document{Data: m}.Write(cmd.OutOrStdout(), listFormat.Format)
 		}
-		writeManifest(cmd.OutOrStdout(), m)
+		u, err := unitsFor(cmd)
+		if err != nil {
+			return err
+		}
+		writeManifest(cmd.OutOrStdout(), m, u)
 		return nil
 	},
 }
 
-func writeManifest(w io.Writer, m reference.Manifest) {
+func writeManifest(w io.Writer, m reference.Manifest, u units.Set) {
 	fmt.Fprintf(w, "%-8s %s\n", "name", m.Name)
 	if len(m.Aliases) > 0 {
 		fmt.Fprintf(w, "%-8s %s\n", "also", strings.Join(m.Aliases, ", "))
 	}
 	if m.Summary != nil {
-		fmt.Fprintf(w, "%-8s %.2f km%s\n", "course", m.Summary.LengthM/1000, loopText(m.Summary))
+		fmt.Fprintf(w, "%-8s %s%s\n", "course", distance(m.Summary.LengthM, u), loopText(m.Summary))
 	}
 	if c := m.Crop; c != nil {
 		if c.FromS != 0 || c.ToS != 0 {
 			fmt.Fprintf(w, "%-8s from %v to %v into the file\n", "crop", secs(c.FromS), endOr(secs(c.ToS), c.ToS))
 		} else {
-			fmt.Fprintf(w, "%-8s from %.2f km to %s into the file\n", "crop", c.FromM/1000, endOr(fmt.Sprintf("%.2f km", c.ToM/1000), c.ToM))
+			fmt.Fprintf(w, "%-8s from %s to %s into the file\n", "crop", distance(c.FromM, u), endOr(distance(c.ToM, u), c.ToM))
 		}
 	}
 	fmt.Fprintf(w, "%-8s %s\n", "file", m.File())

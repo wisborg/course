@@ -51,7 +51,7 @@ func ActivityInks(p render.Palette, o render.Overlay) []color.RGBA {
 // So ends within a few pixels of each other are one dot, labelled with all
 // of them in order: "Finish 1 · Start and finish 2 · Start 3". It is the
 // start's ink if anything starts there, and the finish's otherwise.
-func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks []color.RGBA, looks []Look, every, scale float64) render.Drawing {
+func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks []color.RGBA, looks []Look, sp Spacing, scale float64) render.Drawing {
 	if scale <= 0 {
 		scale = 1
 	}
@@ -69,7 +69,7 @@ func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks 
 		}
 		own := inks
 		own.Route = actInks[i%len(actInks)]
-		one := Drawing(a, v, own, looks[i%len(looks)], every, scale)
+		one := Drawing(a, v, own, looks[i%len(looks)], sp, scale)
 		d.Lines = append(d.Lines, one.Lines...)
 		// Drawing's last two markers are the finish and the start; the
 		// ends are drawn here instead, together.

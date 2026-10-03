@@ -12,6 +12,7 @@ import (
 
 	"github.com/wisborg/fitactivity"
 	"github.com/wisborg/fitactivity/fittest"
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course"
@@ -282,8 +283,8 @@ func TestResolveHalo(t *testing.T) {
 }
 
 // The map's own names are 13 pixels at any size unless a size is given,
-// which is scaled with the picture; markers are every so many kilometres,
-// auto, or none.
+// which is scaled with the picture; markers are every so many of the
+// distance unit, auto, or none, and numbered in it.
 func TestMapLabelSizeAndMarkerEvery(t *testing.T) {
 	st := mapstyle.Default()
 	if got := mapLabelSize(st, 2.4); got != 13 {
@@ -293,10 +294,21 @@ func TestMapLabelSizeAndMarkerEvery(t *testing.T) {
 	if got := mapLabelSize(st, 2.4); math.Abs(got-21.6) > 1e-9 {
 		t.Errorf("9 at scale 2.4: %v, want %v", got, 9*2.4)
 	}
-	for every, want := range map[string]float64{"auto": 0, "none": -1, "2.5": 2500} {
-		st.Markers.Every = every
-		if got := markerEvery(st); got != want {
-			t.Errorf("markers every %s: %v, want %v", every, got, want)
+	metric, _ := units.Of(units.Metric)
+	imperial, _ := units.Of(units.Imperial)
+	for _, c := range []struct {
+		every string
+		u     units.Set
+		want  routemap.Spacing
+	}{
+		{"auto", metric, routemap.Spacing{Every: 0, Unit: 1000}},
+		{"none", metric, routemap.Spacing{Every: -1, Unit: 1000}},
+		{"2.5", metric, routemap.Spacing{Every: 2500, Unit: 1000}},
+		{"2", imperial, routemap.Spacing{Every: 2 * 1609.344, Unit: 1609.344}},
+	} {
+		st.Markers.Every = c.every
+		if got := markerSpacing(st, c.u); math.Abs(got.Every-c.want.Every) > 1e-9 || got.Unit != c.want.Unit {
+			t.Errorf("markers every %s in %s: %+v, want %+v", c.every, c.u.Distance.Name, got, c.want)
 		}
 	}
 }

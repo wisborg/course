@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course/mapstyle"
@@ -27,7 +28,7 @@ var mapStyleCmd = &cobra.Command{
 	Short: "Print the style a map would be drawn in, every setting with a comment",
 	Long: `style prints, as YAML, the style course map draws in with the same --style,
 --set and the flags that are settings of it -- --palette, --width, --height,
---legend, --colour, --grade-cap and --power-source: the built-in defaults, then the file's settings over
+--units, --unit, --legend, --colour, --grade-cap and --power-source: the built-in defaults, then the file's settings over
 them, then the command line's. Every setting is there, with a comment saying
 what it takes, so
 
@@ -59,8 +60,9 @@ func init() {
 
 // buildStyle is the style the flags make: the defaults, the --style file
 // over them, then the command line -- --palette, --width, --height,
-// --legend, --colour, --grade-cap and --power-source, which are the same as
-// --set palette=... and so on, and then every --set in turn -- and checked.
+// --units, --unit, --legend, --colour, --grade-cap and --power-source, which
+// are the same as --set palette=... and so on, and then every --set in turn
+// -- and checked.
 func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	st := mapstyle.Default()
 	if styleOpts.file != "" {
@@ -76,6 +78,27 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	}
 	if cmd.Flags().Changed("height") {
 		st.Height = mapOpts.height
+	}
+	if cmd.Flags().Changed("units") {
+		st.Units.System = unitOpts.system
+	}
+	for _, e := range unitOpts.each {
+		q, name, err := splitUnit(e)
+		if err != nil {
+			return st, err
+		}
+		switch q {
+		case units.Distance:
+			st.Units.Distance = name
+		case units.Elevation:
+			st.Units.Elevation = name
+		case units.Speed:
+			st.Units.Speed = name
+		case units.Pace:
+			st.Units.Pace = name
+		default:
+			return st, fmt.Errorf("--unit %s: %q is not a quantity with units; use distance, elevation, speed or pace", e, q)
+		}
 	}
 	if cmd.Flags().Changed("legend") {
 		st.Legend.Position = mapOpts.legend
@@ -180,17 +203,20 @@ func mapLabelSize(st mapstyle.Style, scale float64) float64 {
 	return n * scale
 }
 
-// markerEvery is the distance between st's distance markers, in metres, as
-// routemap.DistanceMarkersEvery takes it: 0 for auto, below 0 for none.
-func markerEvery(st mapstyle.Style) float64 {
+// markerSpacing is where st's distance markers go, as
+// routemap.DistanceMarkersEvery takes it: every so many of the distance unit
+// apart, in metres -- 0 for auto, below 0 for none -- and numbered in it.
+func markerSpacing(st mapstyle.Style, u units.Set) routemap.Spacing {
+	sp := routemap.Spacing{Unit: u.Distance.ToSI(1)}
 	switch st.Markers.Every {
 	case "auto":
-		return 0
 	case "none":
-		return -1
+		sp.Every = -1
+	default:
+		n, _ := strconv.ParseFloat(st.Markers.Every, 64) // checked by Validate
+		sp.Every = u.Distance.ToSI(n)
 	}
-	km, _ := strconv.ParseFloat(st.Markers.Every, 64) // checked by Validate
-	return km * 1000
+	return sp
 }
 
 // over is base with every setting o makes made.

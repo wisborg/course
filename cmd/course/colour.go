@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/wisborg/fitactivity"
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course"
@@ -71,6 +72,8 @@ type colourOptions struct {
 	powerGiven bool
 	// width is the coloured line's, in pixels on a map 1000 across.
 	width float64
+	// units are what the legend's ends are written in.
+	units units.Set
 }
 
 // powerSources are --power-source's values: the same flag, the same three
@@ -100,9 +103,9 @@ func checkColour(c *course.Course, o colourOptions) error {
 	switch o.metric {
 	case "":
 		return nil
-	case "pace":
+	case "pace", "speed":
 		if !c.Timed {
-			return errors.New("--colour pace: the course has no times, so no pace")
+			return fmt.Errorf("--colour %s: the course has no times, so no %s", o.metric, o.metric)
 		}
 	case "elevation", "grade":
 		if _, _, ok := routemap.Spread(routemap.Elevation(c), 0); !ok {
@@ -181,8 +184,10 @@ func colourBy(cs []*course.Course, name string, o colourOptions, scale float64) 
 	var r ramp
 	peaks := false
 	switch o.metric {
-	case "pace", "grade-adjusted-pace":
-		label = "pace"
+	case "pace", "speed", "grade-adjusted-pace":
+		// Pace and speed are one measure written two ways: slow is blue
+		// and fast red in both, and only the legend's words differ.
+		label = o.metric
 		of := func(c *course.Course) []float64 { return routemap.Speed(c, paceAround) }
 		if o.metric == "grade-adjusted-pace" {
 			label = "grade-adjusted pace"
@@ -194,12 +199,16 @@ func colourBy(cs []*course.Course, name string, o colourOptions, scale float64) 
 			return nil, fmt.Errorf("--colour %s: the course never moves in its clock, or has too little elevation", o.metric)
 		}
 		lo, hi = byShare(lo, hi, minPaceSpread)
-		r = plain(lo, hi, paceText)
+		text := func(v float64) string { return units.FormatPace(v, o.units.Pace) }
+		if o.metric == "speed" {
+			text = func(v float64) string { return units.FormatSpeed(v, o.units.Speed) }
+		}
+		r = plain(lo, hi, text)
 	case "elevation":
 		label, vs = "elevation", all(routemap.Elevation)
 		lo, hi, _ := spread(vs)
 		lo, hi = routemap.Widen(lo, hi, minElevationSpan)
-		r = plain(lo, hi, number("m"))
+		r = plain(lo, hi, func(v float64) string { return short(v, o.units) })
 	case "grade":
 		label = "grade"
 		vs = all(func(c *course.Course) []float64 { return routemap.Grade(c, gradeWindow) })
@@ -298,7 +307,7 @@ func powerSensor(cs []*course.Course, src fitactivity.PowerSource) string {
 }
 
 // colourMetrics are what --colour takes, in words.
-const colourMetrics = "pace, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power or cadence"
+const colourMetrics = "pace, speed, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power or cadence"
 
 // gradeWindow is how far either side of a point its grade is taken over, in
 // metres. Narrower than the 30 m videofx and fitdash read a grade over:
@@ -318,13 +327,3 @@ const minGrade = 0.03
 
 // gradeText is a grade the way videofx writes one: a signed percentage.
 func gradeText(g float64) string { return fmt.Sprintf("%+.1f%%", 100*g) }
-
-// paceText is a speed as a pace, the way videofx writes one: minutes and
-// seconds a kilometre.
-func paceText(speed float64) string {
-	if !(speed > 0) {
-		return "-"
-	}
-	s := int(math.Round(1000 / speed))
-	return fmt.Sprintf("%d:%02d/km", s/60, s%60)
-}

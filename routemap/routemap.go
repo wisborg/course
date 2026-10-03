@@ -39,11 +39,10 @@ func sizes(scale float64) (line, halo, dot, small float64) {
 }
 
 // Drawing is the course as lines and markers over a picture of v, its line
-// drawn in look and its distance markers every metres apart, as
-// DistanceMarkersEvery takes it. A gap in the recording is drawn as wide and as opaque, but
+// drawn in look and its distance markers placed as sp says. A gap in the recording is drawn as wide and as opaque, but
 // always dashed and in the gap's ink, so it is never taken for where the
 // course went.
-func Drawing(c *course.Course, v render.View, inks Inks, look Look, every, scale float64) render.Drawing {
+func Drawing(c *course.Course, v render.View, inks Inks, look Look, sp Spacing, scale float64) render.Drawing {
 	if scale <= 0 {
 		scale = 1
 	}
@@ -62,7 +61,7 @@ func Drawing(c *course.Course, v render.View, inks Inks, look Look, every, scale
 		d.Lines = append(d.Lines, look.line(run.points, inks.Route, inks.Halo, scale))
 	}
 
-	for _, m := range DistanceMarkersEvery(c, every) {
+	for _, m := range DistanceMarkersEvery(c, sp) {
 		d.Markers = append(d.Markers, render.Marker{At: m.At, Ink: inks.Marker, Radius: small, Halo: halo, HaloInk: inks.Halo, Label: m.Label})
 	}
 	first, last := c.Points[0], c.Points[len(c.Points)-1]
@@ -201,12 +200,22 @@ func MarkerInterval(total float64) float64 {
 // fixes either side of its distance in proportion. A course without recorded
 // distance has none: they would be computed from the line, and the file did
 // not say how far anybody went.
-func DistanceMarkers(c *course.Course) []Marker { return DistanceMarkersEvery(c, 0) }
+func DistanceMarkers(c *course.Course) []Marker { return DistanceMarkersEvery(c, Spacing{}) }
 
-// DistanceMarkersEvery is DistanceMarkers every metres apart: 0 for
-// MarkerInterval's, and less than 0 for none.
-func DistanceMarkersEvery(c *course.Course, every float64) []Marker {
-	if len(c.Points) < 2 || every < 0 {
+// Spacing is where distance markers go and what they say.
+type Spacing struct {
+	// Every is how far apart they are, in metres: 0 for MarkerInterval's,
+	// applied to the course's length in Unit, and less than 0 for none.
+	Every float64
+	// Unit is how many metres the distance unit is -- 1000 for kilometres,
+	// 1609.344 for miles -- and what a marker counts in; 0 is kilometres.
+	Unit float64
+}
+
+// DistanceMarkersEvery is DistanceMarkers as sp says: so far apart, and
+// numbered in its unit.
+func DistanceMarkersEvery(c *course.Course, sp Spacing) []Marker {
+	if len(c.Points) < 2 || sp.Every < 0 {
 		return nil
 	}
 	for _, p := range c.Points {
@@ -214,9 +223,16 @@ func DistanceMarkersEvery(c *course.Course, every float64) []Marker {
 			return nil
 		}
 	}
+	unit := sp.Unit
+	if !(unit > 0) {
+		unit = 1000
+	}
 	first, last := c.Points[0], c.Points[len(c.Points)-1]
+	every := sp.Every
 	if every == 0 {
-		every = MarkerInterval(last.Distance - first.Distance)
+		// The same spacing for the course's length in its unit: a mile
+		// apart on a ten-mile run, as a kilometre on a ten-kilometre one.
+		every = MarkerInterval((last.Distance-first.Distance)/unit*1000) / 1000 * unit
 	}
 	if every == 0 {
 		return nil
@@ -233,10 +249,20 @@ func DistanceMarkersEvery(c *course.Course, every float64) []Marker {
 			f := (next - a.Distance) / (b.Distance - a.Distance)
 			out = append(out, Marker{
 				At:    render.Coord{Lat: a.Lat + f*(b.Lat-a.Lat), Lon: a.Lon + f*(b.Lon-a.Lon)},
-				Label: fmt.Sprintf("%.0f", (next-first.Distance)/1000),
+				Label: markerLabel((next - first.Distance) / unit),
 			})
 			next += every
 		}
 	}
 	return out
+}
+
+// markerLabel is a marker's distance in its unit: whole, or to a tenth
+// where markers are a fraction of a unit apart.
+func markerLabel(d float64) string {
+	d = math.Round(d*10) / 10
+	if d == math.Trunc(d) {
+		return fmt.Sprintf("%.0f", d)
+	}
+	return fmt.Sprintf("%.1f", d)
 }

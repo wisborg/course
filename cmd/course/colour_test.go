@@ -101,7 +101,7 @@ func TestMapColour(t *testing.T) {
 		{[]string{"--colour", "elevation", plan}, "no elevation"},
 		{[]string{"--colour", "grade", plan}, "no elevation"},
 		{[]string{"--colour", "grade", oneHeight}, "too little elevation"},
-		{[]string{"--colour", "stride", run1}, `colouring.by: "stride" is not one; colour by pace, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power, cadence, or none`},
+		{[]string{"--colour", "stride", run1}, `colouring.by: "stride" is not one; colour by pace, speed, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power, cadence, or none`},
 		{[]string{"--colour", "pace", "--grade-cap", "25", run1}, "--grade-cap is for --colour grade"},
 		{[]string{"--colour", "grade", "--grade-cap", "0", run1}, "more than 0"},
 		{[]string{"--colour", "pace", "--compare", run1, run1}, "use one"},
@@ -114,14 +114,6 @@ func TestMapColour(t *testing.T) {
 	}
 	if _, err := os.Stat(store); !os.IsNotExist(err) {
 		t.Error("a store was made for a map that was refused")
-	}
-}
-
-func TestPaceText(t *testing.T) {
-	for speed, want := range map[float64]string{1000.0 / 300: "5:00/km", 1000.0 / 359.6: "6:00/km", 0: "-"} {
-		if got := paceText(speed); got != want {
-			t.Errorf("paceText(%v) = %q, want %q", speed, got, want)
-		}
 	}
 }
 

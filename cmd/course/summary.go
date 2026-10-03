@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/osmbase/fetch"
 	"github.com/wisborg/osmbase/locate"
 	"github.com/wisborg/osmbase/slice"
@@ -151,12 +152,16 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		writeOneLiner(out, s, credits)
 		return nil
 	}
-	doc.Table = summaryTable(s)
+	u, err := unitsShown(cmd, summaryOpts.format.Format)
+	if err != nil {
+		return err
+	}
+	doc.Table = summaryTable(s, u)
 	if err := doc.Write(out, summaryOpts.format.Format); err != nil {
 		return err
 	}
 	if summaryOpts.format.Format == output.Text {
-		writeFooter(out, c, s, credits)
+		writeFooter(out, c, s, credits, u)
 	}
 	return nil
 }
@@ -251,7 +256,7 @@ func writeOneLiner(w io.Writer, s *summary.Summary, credits []string) {
 
 // summaryTable is the change log for a terminal or CSV: one column per level
 // that named anything, so a flight is not a table of empty street columns.
-func summaryTable(s *summary.Summary) *table.Table {
+func summaryTable(s *summary.Summary, u units.Set) *table.Table {
 	var levels []locate.Level
 	for _, l := range locate.Levels {
 		for _, r := range s.Rows {
@@ -266,7 +271,7 @@ func summaryTable(s *summary.Summary) *table.Table {
 		cols = append(cols, table.Column{Header: "elapsed", Align: table.Right})
 	}
 	if s.Measured {
-		cols = append(cols, table.Column{Header: "km", Align: table.Right, Format: "%.2f"})
+		cols = append(cols, table.Column{Header: u.Distance.Name, Align: table.Right, Format: "%.2f"})
 	}
 	for _, l := range levels {
 		cols = append(cols, table.Column{Header: l.String()})
@@ -278,7 +283,7 @@ func summaryTable(s *summary.Summary) *table.Table {
 			cells = append(cells, clock(r.Elapsed))
 		}
 		if s.Measured {
-			cells = append(cells, r.Distance/1000)
+			cells = append(cells, u.Distance.FromSI(r.Distance))
 		}
 		for _, l := range levels {
 			name := ""
@@ -304,7 +309,7 @@ func placeAt(r summary.Row, l locate.Level) (locate.Match, bool) {
 	return locate.Match{}, false
 }
 
-func writeFooter(w io.Writer, c *course.Course, s *summary.Summary, credits []string) {
+func writeFooter(w io.Writer, c *course.Course, s *summary.Summary, credits []string, u units.Set) {
 	how := "chosen"
 	if s.Auto {
 		how = fmt.Sprintf("auto, the finest within %d rows", summaryOpts.maxRows)
@@ -315,7 +320,7 @@ func writeFooter(w io.Writer, c *course.Course, s *summary.Summary, credits []st
 		finish = append(finish, clock(s.Finish.Elapsed))
 	}
 	if s.Finish.HasDistance {
-		finish = append(finish, fmt.Sprintf("%.2f km", s.Finish.Distance/1000))
+		finish = append(finish, distance(s.Finish.Distance, u))
 	}
 	if len(finish) > 0 {
 		fmt.Fprintf(w, "finish %s\n", strings.Join(finish, ", "))

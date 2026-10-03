@@ -50,7 +50,7 @@ func TestActivitiesDrawing(t *testing.T) {
 	acts := []*course.Course{first, second, loop}
 	inks := InksFor(render.LightPalette(), render.LightOverlay())
 	actInks := []color.RGBA{{R: 1, A: 0xff}, {G: 1, A: 0xff}}
-	d := ActivitiesDrawing(acts, viewOf(acts...), inks, actInks, []Look{{Width: 3, Opacity: 1}}, 0, 1)
+	d := ActivitiesDrawing(acts, viewOf(acts...), inks, actInks, []Look{{Width: 3, Opacity: 1}}, Spacing{}, 1)
 
 	seen := map[color.RGBA]bool{}
 	for _, l := range d.Lines {

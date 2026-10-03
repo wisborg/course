@@ -25,6 +25,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/wisborg/fitactivity/units"
 )
 
 // Style is everything about a map's look that can be set.
@@ -36,6 +38,9 @@ type Style struct {
 	// size.
 	Width  int `yaml:"width"`
 	Height int `yaml:"height"`
+	// Units are the units the map's numbers are shown in: its distance
+	// markers, its legend, its report.
+	Units Units `yaml:"units"`
 	// Text is the text course writes over the map.
 	Text Text `yaml:"text"`
 	// Map is the map under the course.
@@ -60,6 +65,37 @@ type Style struct {
 	// reference's, a file's without its extension, "Great circle 1".
 	// Each says only what differs from Reference.
 	References map[string]Line `yaml:"references"`
+}
+
+// Units are the units numbers are shown in: a system, and the unit for each
+// quantity, auto for the system's -- so a flight is imperial with its
+// distance in nautical miles and its speed in knots.
+type Units struct {
+	System    string `yaml:"system"`
+	Distance  string `yaml:"distance"`
+	Elevation string `yaml:"elevation"`
+	Speed     string `yaml:"speed"`
+	Pace      string `yaml:"pace"`
+}
+
+// Set is u as the units in use.
+func (u Units) Set() (units.Set, error) {
+	set, err := units.Of(units.System(u.System))
+	if err != nil {
+		return set, fmt.Errorf("units.system: %w", err)
+	}
+	for _, q := range []struct {
+		q    units.Quantity
+		name string
+	}{{units.Distance, u.Distance}, {units.Elevation, u.Elevation}, {units.Speed, u.Speed}, {units.Pace, u.Pace}} {
+		if q.name == "auto" {
+			continue
+		}
+		if err := set.Use(q.q, q.name); err != nil {
+			return set, fmt.Errorf("units.%s: %w", q.q, err)
+		}
+	}
+	return set, nil
 }
 
 // Text is the text course writes over the map: start and finish, the
@@ -87,7 +123,7 @@ type Legend struct {
 // Markers are the course's distance markers, on a course whose file
 // recorded distance.
 type Markers struct {
-	// Every is the distance between them in kilometres; auto for a
+	// Every is the distance between them in the distance unit; auto for a
 	// distance that suits the course's length; none for no markers.
 	Every string `yaml:"every"`
 }
@@ -113,7 +149,7 @@ type Colouring struct {
 // readings it can be coloured by -- the same three, meaning the same, as
 // videofx's and fitdash's --power-source.
 var (
-	Metrics      = []string{"pace", "grade-adjusted-pace", "elevation", "grade", "heart-rate", "power", "air-power", "cadence"}
+	Metrics      = []string{"pace", "speed", "grade-adjusted-pace", "elevation", "grade", "heart-rate", "power", "air-power", "cadence"}
 	PowerSources = []string{"auto", "stryd", "native"}
 )
 
@@ -150,6 +186,7 @@ func Default() Style {
 		Palette:    "light",
 		Width:      1600,
 		Height:     1000,
+		Units:      Units{System: "metric", Distance: "auto", Elevation: "auto", Speed: "auto", Pace: "auto"},
 		Text:       Text{Size: 13},
 		Map:        Map{LabelSize: "auto"},
 		Legend:     Legend{Position: "auto"},
@@ -204,6 +241,7 @@ func plain(err error) error {
 		" in type mapstyle.Style", "; a style has "+strings.Join(topKeys, ", "),
 		" in type mapstyle.Colouring", "; colouring has "+strings.Join(groupKeys["colouring"], ", "),
 		" in type mapstyle.Text", "; text has "+strings.Join(groupKeys["text"], ", "),
+		" in type mapstyle.Units", "; units has "+strings.Join(groupKeys["units"], ", "),
 		" in type mapstyle.Map", "; map has "+strings.Join(groupKeys["map"], ", "),
 		" in type mapstyle.Legend", "; legend has "+strings.Join(groupKeys["legend"], ", "),
 		" in type mapstyle.Markers", "; markers has "+strings.Join(groupKeys["markers"], ", "),
@@ -290,10 +328,11 @@ func (s *Style) Set(setting string) error {
 var bareColour = regexp.MustCompile(`(^|[\[,\s])(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)\b`)
 
 var (
-	topKeys  = []string{"palette", "width", "height", "text", "map", "legend", "markers", "colouring", "course", "activities", "reference", "references"}
+	topKeys  = []string{"palette", "width", "height", "units", "text", "map", "legend", "markers", "colouring", "course", "activities", "reference", "references"}
 	lineKeys = []string{"colour", "colours", "width", "opacity", "style", "halo"}
 	// groupKeys are the settings of each group that is not a line.
 	groupKeys = map[string][]string{
+		"units":     {"system", "distance", "elevation", "speed", "pace"},
 		"text":      {"size"},
 		"map":       {"label-size"},
 		"legend":    {"position"},
@@ -318,7 +357,7 @@ func checkPath(keys []string) error {
 			return fmt.Errorf("%s is one setting, not a group of them", keys[0])
 		}
 		return nil
-	case "text", "map", "legend", "markers", "colouring":
+	case "units", "text", "map", "legend", "markers", "colouring":
 		group := groupKeys[keys[0]]
 		if len(keys) > 2 || len(keys) == 2 && !slices.Contains(group, keys[1]) {
 			return fmt.Errorf("no such setting %q; %s has %s", strings.Join(keys[1:], "."), keys[0], strings.Join(group, ", "))
@@ -388,6 +427,9 @@ func (s Style) Validate() error {
 	if s.Height < smallest {
 		return fmt.Errorf("height: %d pixels is too small to draw a course on; give at least %d", s.Height, smallest)
 	}
+	if _, err := s.Units.Set(); err != nil {
+		return err
+	}
 	if !(s.Text.Size > 0) {
 		return fmt.Errorf("text.size: %v is not a size; give pixels on a map 1000 across, more than 0", s.Text.Size)
 	}
@@ -398,7 +440,7 @@ func (s Style) Validate() error {
 		return fmt.Errorf("legend.position: %q is not one; use %s", s.Legend.Position, strings.Join(LegendPositions, ", "))
 	}
 	if s.Markers.Every != "none" {
-		if err := autoOrPositive("markers.every", s.Markers.Every, "kilometres, or none"); err != nil {
+		if err := autoOrPositive("markers.every", s.Markers.Every, "a distance in the distance unit, or none"); err != nil {
 			return err
 		}
 	}
@@ -576,6 +618,12 @@ var descriptions = map[string]string{
 	"palette":                "The map's colours: light or dark.",
 	"width":                  "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
 	"height":                 "The picture's height in pixels.",
+	"units":                  "The units numbers are shown in. --units and --unit are the same as\nsetting these, for this and every other command.",
+	"units.system":           "metric or imperial.",
+	"units.distance":         "auto for the system's, or km, mi, nmi.",
+	"units.elevation":        "auto for the system's, or m, ft. Also short distances, such as how far\na run strayed from a course.",
+	"units.speed":            "auto for the system's, or km/h, mph, kn, m/s.",
+	"units.pace":             "auto for the system's, or min/km, min/mi.",
 	"text":                   "The text course writes over the map: start and finish, the distance\nmarkers' numbers, the legend, the map's credit.",
 	"text.size":              "In pixels on a map 1000 pixels across; scaled with the map.",
 	"map":                    "The map under the course.",
@@ -583,9 +631,9 @@ var descriptions = map[string]string{
 	"legend":                 "The legend saying what each line or colour is.",
 	"legend.position":        "top-left, top-right, bottom-left or bottom-right; auto for whichever covers\nleast of the course; none for no legend. --legend is the same as setting it.",
 	"markers":                "The distance markers, on a course whose file recorded distance.",
-	"markers.every":          "The distance between them in kilometres; auto for one that suits the\ncourse's length; none for no markers.",
+	"markers.every":          "The distance between them, in the distance unit; auto for one that suits\nthe course's length; none for no markers.",
 	"colouring":              "What the course's line is coloured by along it; --colour, --grade-cap and\n--power-source are the same as setting these.",
-	"colouring.by":           "none, or one of pace, grade-adjusted-pace, elevation, grade, heart-rate,\npower, air-power, cadence.",
+	"colouring.by":           "none, or one of pace, speed, grade-adjusted-pace, elevation, grade,\nheart-rate, power, air-power, cadence.",
 	"colouring.grade-cap":    "With by: grade, the steepest grade the colours tell apart, in per cent\neither way; steeper takes the end colour.",
 	"colouring.power-source": "With by: power, which reading when a file has both: auto (a footpod's,\nsuch as Stryd's, if there is one), stryd, or native (the watch's).",
 	"colouring.width":        "The coloured line's width, in pixels on a map 1000 pixels across.",
