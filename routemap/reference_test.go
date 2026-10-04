@@ -99,11 +99,11 @@ func TestReferenceInksReadOnTheirMap(t *testing.T) {
 // changes.
 func TestWithReferences(t *testing.T) {
 	course := render.Drawing{Lines: []render.Line{{Points: []render.Coord{{Lat: 0, Lon: 0}, {Lat: 0, Lon: 1}}, Width: 4, Halo: 2}}}
-	if got := WithReferences(course, nil, nil, nil, render.LightPalette().Background, 1); len(got.Lines) != 1 || got.Lines[0].Width != 4 {
+	if got := WithReferences(course, nil, nil, nil, render.LightPalette().Background, 1, render.View{}, nil); len(got.Lines) != 1 || got.Lines[0].Width != 4 {
 		t.Errorf("with no references the drawing changed: %+v", got.Lines)
 	}
 	refs := []Reference{{Name: "r", Points: []render.Coord{{Lat: 0, Lon: 0}, {Lat: 0, Lon: 1}}}}
-	got := WithReferences(course, refs, ReferenceInks(render.LightPalette()), []Look{{Width: 3, Opacity: 1, Halo: 2, Pattern: Dashed}}, render.LightPalette().Background, 1)
+	got := WithReferences(course, refs, ReferenceInks(render.LightPalette()), []Look{{Width: 3, Opacity: 1, Halo: 2, Pattern: Dashed}}, render.LightPalette().Background, 1, render.View{}, nil)
 	if len(got.Lines) != 2 || len(got.Lines[0].Dash) == 0 || len(got.Lines[1].Dash) != 0 {
 		t.Fatalf("lines %+v; want the reference first, then the course", got.Lines)
 	}
@@ -163,15 +163,15 @@ func TestWithReferencesKeepsTheCourseWideForDepartures(t *testing.T) {
 	inks := []color.RGBA{{A: 0xff}}
 	dashed := []Look{{Width: 2, Opacity: 1, Pattern: Dashed}}
 	apart := Followed("Loop", line1km(), match.Match{Missed: []match.Stretch{{From: 200, To: 300}}})
-	got := WithReferences(d, []Reference{apart}, inks, dashed, color.RGBA{}, 1)
+	got := WithReferences(d, []Reference{apart}, inks, dashed, color.RGBA{}, 1, render.View{}, nil)
 	if n := len(got.Lines); n != 2 || got.Lines[1].Width != 10 || got.Lines[0].Dash == nil {
 		t.Errorf("with a departure drawn: %+v; want the departure under the course at its full width", got.Lines)
 	}
-	got = WithReferences(d, []Reference{apart, FromCourse("Other", line1km())}, inks, dashed, color.RGBA{}, 1)
+	got = WithReferences(d, []Reference{apart, FromCourse("Other", line1km())}, inks, dashed, color.RGBA{}, 1, render.View{}, nil)
 	if last := got.Lines[len(got.Lines)-1]; last.Width != 10*thinned {
 		t.Errorf("with a reference drawn whole, the course is %v wide, want narrowed", last.Width)
 	}
-	if got := WithReferences(d, []Reference{Followed("Loop", line1km(), match.Match{})}, inks, dashed, color.RGBA{}, 1); len(got.Lines) != 1 || got.Lines[0].Width != 10 {
+	if got := WithReferences(d, []Reference{Followed("Loop", line1km(), match.Match{})}, inks, dashed, color.RGBA{}, 1, render.View{}, nil); len(got.Lines) != 1 || got.Lines[0].Width != 10 {
 		t.Errorf("with nothing of the reference to draw, the drawing changed: %+v", got.Lines)
 	}
 }

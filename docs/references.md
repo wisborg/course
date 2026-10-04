@@ -153,8 +153,17 @@ coloured edge. To try later:
   is everything with `--whole-references`. On Rhodes parkrun the bridge-closed run against
   a usual one draws the one stretch where the courses differ and leaves the rest of the
   map clear.
-- **Parallel lines**: the reference offset beside the course, as a transit map draws lines
-  that share a road.
+- **Parallel lines** -- built, for a reference drawn whole. Where it runs along the course --
+  within matching's tolerance and heading the same way, or back, within 35° -- it is moved
+  into a lane beside it, the course's half width plus a pixel out, eased in and out over a
+  few times that distance so it is seen leaving and rejoining. Lanes were first given to
+  references alternately right and left, and on Rhodes parkrun, an out-and-back, one
+  reference's way back fell in the other's lane out, two dashed lines drawn through each
+  other. Every reference now takes the right of its own direction, each in a lane further out
+  than the last, so no two coincide whichever way they run. Two references that leave the
+  course together are still drawn over each other there: lanes are measured from the course,
+  not from one another. `reference.beside: false` keeps the narrowed course with references
+  along its edges.
 
 ### First, the 180° meridian
 

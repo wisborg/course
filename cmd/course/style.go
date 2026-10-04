@@ -233,6 +233,9 @@ func over(base, o mapstyle.Line) mapstyle.Line {
 	if o.Halo != "" {
 		base.Halo = o.Halo
 	}
+	if o.Beside != nil {
+		base.Beside = o.Beside
+	}
 	return base
 }
 
@@ -254,7 +257,7 @@ func look(l mapstyle.Line, whole bool) routemap.Look {
 		halo = 1
 	}
 	pattern := map[string]routemap.Pattern{"solid": routemap.Solid, "dashed": routemap.Dashed, "dotted": routemap.Dotted}[l.Style]
-	return routemap.Look{Width: *l.Width, Opacity: opacity, Halo: halo, Pattern: pattern}
+	return routemap.Look{Width: *l.Width, Opacity: opacity, Halo: halo, Pattern: pattern, Beside: l.Beside != nil && *l.Beside}
 }
 
 // hex is the colour s, #rrggbb or #rrggbbaa, which Validate has checked.

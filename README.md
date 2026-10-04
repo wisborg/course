@@ -131,6 +131,7 @@ reference:               # every reference
   width: 2.25
   opacity: auto
   style: dotted
+  beside: true           # where it shares a road with the course, beside it, not under
 references:              # one reference, by its name
   Rhodes parkrun:
     colour: "#0077aa"
@@ -273,6 +274,14 @@ detour, the stretch a late-started watch never saw -- so the map is not buried u
 second line that says nothing new; the legend says "where the course left it", or
 "followed all the way" when there is nothing to draw. `--whole-references` draws them whole
 again. A reference the course did not follow, and the great circle, are always drawn whole.
+
+A reference drawn whole is drawn beside the course where the two share a road, as a transit
+map draws lines that share a street: in a lane of its own to the right of its direction,
+each further reference in a lane outside the last, easing out of its lane where it leaves the
+course and back in where it rejoins. A reference that crosses the course is left alone, and
+an out-and-back is drawn on both sides of the road, as a bus route is. `--set
+reference.beside=false` draws it under the course instead, the course narrowed so the
+reference shows along its edges, as before.
 
 References you use often can be stored by name:
 

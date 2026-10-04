@@ -176,9 +176,16 @@ type Line struct {
 	// of the line, in pixels on a map 1000 pixels across; or auto, for a
 	// slim one on an opaque line and none on a translucent one.
 	Halo string `yaml:"halo,omitempty"`
+	// Beside is whether a reference drawn whole is drawn beside the course
+	// where the two share a road, in a lane of its own, or under it, the
+	// course narrowed so it shows along the edges: true or false. A
+	// reference's setting only.
+	Beside *bool `yaml:"beside,omitempty"`
 }
 
 func ptr(v float64) *float64 { return &v }
+
+func yes(v bool) *bool { return &v }
 
 // Default is the built-in style: the map course has always drawn.
 func Default() Style {
@@ -194,7 +201,7 @@ func Default() Style {
 		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto", Width: 3},
 		Course:     Line{Colour: "auto", Colours: []string{}, Width: ptr(3), Opacity: "auto", Style: "solid", Halo: "auto"},
 		Activities: []Line{},
-		Reference:  Line{Colour: "auto", Colours: []string{}, Width: ptr(2.25), Opacity: "auto", Style: "dashed", Halo: "auto"},
+		Reference:  Line{Colour: "auto", Colours: []string{}, Width: ptr(2.25), Opacity: "auto", Style: "dashed", Halo: "auto", Beside: yes(true)},
 		References: map[string]Line{},
 	}
 }
@@ -329,7 +336,7 @@ var bareColour = regexp.MustCompile(`(^|[\[,\s])(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2
 
 var (
 	topKeys  = []string{"palette", "width", "height", "units", "text", "map", "legend", "markers", "colouring", "course", "activities", "reference", "references"}
-	lineKeys = []string{"colour", "colours", "width", "opacity", "style", "halo"}
+	lineKeys = []string{"colour", "colours", "width", "opacity", "style", "halo", "beside"}
 	// groupKeys are the settings of each group that is not a line.
 	groupKeys = map[string][]string{
 		"units":     {"system", "distance", "elevation", "speed", "pace"},
@@ -460,12 +467,18 @@ func (s Style) Validate() error {
 	if err := s.Course.check("course", true, true); err != nil {
 		return err
 	}
+	if s.Course.Beside != nil {
+		return errors.New("course.beside: only a reference is drawn beside the course; set reference.beside")
+	}
 	if err := s.Reference.check("reference", true, true); err != nil {
 		return err
 	}
 	for i, a := range s.Activities {
 		if err := a.check(fmt.Sprintf("activities.%d", i+1), false, false); err != nil {
 			return err
+		}
+		if a.Beside != nil {
+			return fmt.Errorf("activities.%d.beside: only a reference is drawn beside the course; set reference.beside", i+1)
 		}
 	}
 	names := make([]string, 0, len(s.References))
@@ -639,6 +652,8 @@ var descriptions = map[string]string{
 	"colouring.width":        "The coloured line's width, in pixels on a map 1000 pixels across.",
 	"course.halo":            "A band of the map's background either side of the line, in pixels on a\nmap 1000 across; auto: a slim one on an opaque line, none on a translucent one.",
 	"reference.halo":         "As for course.",
+	"reference.beside":       "true: a reference drawn whole is drawn beside the course where the two\nshare a road, in a lane of its own, as a transit map draws lines; false:\nunder it, the course narrowed so it shows along the edges.",
+	"override.beside":        "true or false; references only.",
 	"override.halo":          "In pixels on a map 1000 pixels across, or auto.",
 	"course":                 "The course, and with --separate every activity unless activities says otherwise.",
 	"course.colour":          "A hex colour, #rrggbb or #rrggbbaa, or auto for the palette's own.\nWith --separate, activity 1's.",
@@ -653,7 +668,7 @@ var descriptions = map[string]string{
 	"reference.width":        "In pixels on a map 1000 pixels across; scaled with the map.",
 	"reference.opacity":      "From 0 to 1, or auto, as for course.",
 	"reference.style":        "solid, dashed or dotted.",
-	"references":             "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle, halo. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
+	"references":             "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle, halo, beside. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
 	"override.colour":        "A hex colour, #rrggbb or #rrggbbaa.",
 	"override.width":         "In pixels on a map 1000 pixels across.",
 	"override.opacity":       "From 0 to 1, or auto.",

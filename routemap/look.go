@@ -27,6 +27,10 @@ type Look struct {
 	// of the line; 0 draws none.
 	Halo    float64
 	Pattern Pattern
+	// Beside draws a reference drawn whole beside the course where the two
+	// share a road, in a lane of its own, rather than under it. Only a
+	// reference's look reads it.
+	Beside bool
 }
 
 // line is points drawn in look l and ink at scale: as wide as l says, its

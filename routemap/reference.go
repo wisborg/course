@@ -138,37 +138,74 @@ func ReferenceLines(refs []Reference, inks []color.RGBA, looks []Look, halo colo
 }
 
 // thinned is how much of its usual width the course's line is drawn at when
-// references are drawn under it: enough narrower that a reference following
-// it shows along both its edges, rather than lying hidden beneath it.
+// references are drawn whole under it: enough narrower that a reference
+// following it shows along both its edges, rather than lying hidden beneath
+// it.
 const thinned = 0.55
 
-// WithReferences is a course's drawing with references under it: the
-// references first, so the course is drawn over them, and -- when any is
-// drawn whole -- the course's lines narrowed, with their halos, so a
-// reference that follows the course closely shows along its edges. A
-// reference drawn only where it parts from the course needs no room beside
-// it, and the course keeps its width. With nothing to draw the drawing is as
-// it was.
-func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, looks []Look, halo color.RGBA, scale float64) render.Drawing {
-	lines := ReferenceLines(refs, inks, looks, halo, scale)
+// laneGap is the room between two lines drawn side by side, in pixels on a
+// map 1000 across: enough of the map between them to tell them apart.
+const laneGap = 1.0
+
+// WithReferences is a course's drawing with references under it, the
+// references first, so the course is drawn over them. A reference drawn
+// only where it parts from the course needs no room beside it. One drawn
+// whole is drawn beside the course where the two share a road, if its look
+// says Beside: each such reference in a lane of its own to the right of its
+// direction, the second outside the first, as a transit map draws lines
+// that share a street -- along, the course's own points, is what they are
+// measured from, on view v.
+//
+// All to the right, each at its own distance, rather than alternating
+// sides, for an out-and-back: a reference's way back is on the other side
+// of the road from its way out, and with two references on alternate sides
+// one's way back fell in the same lane as the other's way out, the two
+// dashed lines drawn through each other. At distances of their own no two
+// lanes coincide, whichever way each runs. A
+// reference drawn whole and not beside narrows the course's lines instead,
+// with their halos, so it shows along the course's edges. With nothing to
+// draw the drawing is as it was.
+func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, looks []Look, halo color.RGBA, scale float64, v render.View, along []render.Coord) render.Drawing {
+	if scale <= 0 {
+		scale = 1
+	}
+	half := 0.0 // the course's half width, halo and all
+	for _, l := range d.Lines {
+		half = math.Max(half, l.Width/2+l.Halo)
+	}
+	under := false // a reference drawn whole, and not beside
+	reach := half
+	moved := make([]Reference, len(refs))
+	for i, r := range refs {
+		moved[i] = r
+		if r.Follows {
+			continue
+		}
+		look := looks[i%len(looks)]
+		if !look.Beside {
+			under = true
+			continue
+		}
+		w := look.Width*scale/2 + look.Halo*scale
+		offset := reach + laneGap*scale + w
+		reach = offset + w
+		moved[i].Points = beside(r.Points, along, v, offset)
+	}
+	lines := ReferenceLines(moved, inks, looks, halo, scale)
 	if len(lines) == 0 {
 		return d
 	}
-	whole := false
-	for _, r := range refs {
-		whole = whole || !r.Follows
-	}
-	if !whole {
+	if !under {
 		d.Lines = append(lines, d.Lines...)
 		return d
 	}
-	course := make([]render.Line, len(d.Lines))
+	narrow := make([]render.Line, len(d.Lines))
 	for i, l := range d.Lines {
 		l.Width *= thinned
 		l.Halo *= thinned
-		course[i] = l
+		narrow[i] = l
 	}
-	d.Lines = append(lines, course...)
+	d.Lines = append(lines, narrow...)
 	return d
 }
 

@@ -250,7 +250,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		}
 		drawing.Gradients = append(drawing.Gradients, col.gradients...)
 	}
-	drawing = routemap.WithReferences(drawing, refs, look.refInks, look.refLooks, inks.Halo, scale)
+	drawing = routemap.WithReferences(drawing, refs, look.refInks, look.refLooks, inks.Halo, scale, view, routemap.FromCourse("", c).Points)
 	if err := render.Draw(img, view, drawing, face); err != nil {
 		return err
 	}

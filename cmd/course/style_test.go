@@ -87,13 +87,14 @@ func TestResolve(t *testing.T) {
 	if l := d.actLooks[0]; l.Width != 3 || l.Opacity != 0.7 || l.Halo != 0 || l.Pattern != routemap.Solid {
 		t.Errorf("default course look %+v", l)
 	}
-	if l := d.refLooks[0]; l.Width != 2.25 || l.Pattern != routemap.Dashed {
+	if l := d.refLooks[0]; l.Width != 2.25 || l.Pattern != routemap.Dashed || !l.Beside || d.actLooks[0].Beside {
 		t.Errorf("default reference look %+v", l)
 	}
 
 	for _, set := range []string{
 		"course.colour=#010203", "course.colours=[#0a0b0c, #0d0e0f]", "activities.3.colour=#111111", "activities.2.width=9",
 		"reference.colours=[#202020, #303030]", "references.B.colour=#404040", "references.C.style=dotted", "references.C.opacity=0.5",
+		"reference.beside=false", "references.B.beside=true",
 	} {
 		if err := st.Set(set); err != nil {
 			t.Fatal(err)
@@ -121,6 +122,9 @@ func TestResolve(t *testing.T) {
 	}
 	if l := d.refLooks[2]; l.Opacity != 0.5 || l.Halo != 0 || l.Pattern != routemap.Dotted {
 		t.Errorf("reference C %+v; want its own 0.5, no halo, dotted", l)
+	}
+	if d.refLooks[0].Beside || !d.refLooks[1].Beside {
+		t.Errorf("beside: A %v, B %v; want false for all, true for B by name", d.refLooks[0].Beside, d.refLooks[1].Beside)
 	}
 	st.Reference.Colour = "#505050"
 	if d := resolve(st, 1, refs, p, o); d.refInks[0] != hex("#505050") || d.refInks[1] != hex("#404040") {

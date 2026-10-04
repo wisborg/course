@@ -24,7 +24,7 @@ func TestDefault(t *testing.T) {
 	if s.Width != 1600 || s.Height != 1000 {
 		t.Errorf("default size %d by %d", s.Width, s.Height)
 	}
-	if s.Palette != "light" || *s.Course.Width != 3 || s.Course.Opacity != "auto" || s.Reference.Style != "dashed" || *s.Reference.Width != 2.25 {
+	if s.Palette != "light" || *s.Course.Width != 3 || s.Course.Opacity != "auto" || s.Reference.Style != "dashed" || *s.Reference.Width != 2.25 || !*s.Reference.Beside || s.Course.Beside != nil {
 		t.Errorf("default %+v", s)
 	}
 }
@@ -100,6 +100,8 @@ func TestSet(t *testing.T) {
 		"colouring.width=5",
 		"course.halo=2",
 		"colouring.grade-cap=30",
+		"reference.beside=false",
+		"references.Loop.beside=true",
 		"height=3000",
 	} {
 		if err := s.Set(set); err != nil {
@@ -119,6 +121,9 @@ func TestSet(t *testing.T) {
 	if s.References["Rhodes parkrun"].Colour != "#0077aa" || s.References["run.v2"].Style != "dotted" {
 		t.Errorf("references %+v", s.References)
 	}
+	if *s.Reference.Beside || !*s.References["Loop"].Beside {
+		t.Errorf("beside: reference %v, Loop %v", *s.Reference.Beside, *s.References["Loop"].Beside)
+	}
 	if err := s.Validate(); err != nil {
 		t.Errorf("valid settings refused: %v", err)
 	}
@@ -133,6 +138,7 @@ func TestSet(t *testing.T) {
 		{"colouring.metric=pace", `no such setting "metric"; colouring has by, grade-cap, power-source, width`},
 		{"text.colour=#000000", `no such setting "colour"; text has size`},
 		{"markers.size=3", `no such setting "size"; markers has every`},
+		{"reference.beside=maybe", "reference.beside"},
 	} {
 		s := Default()
 		if err := s.Set(c.set); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -168,6 +174,8 @@ func TestValidate(t *testing.T) {
 		{"reference.style=wavy", "reference.style"},
 		{"activities.1.colours=[#123456]", "activities.1.colours"},
 		{"references.Loop.opacity=2", "references.Loop.opacity"},
+		{"course.beside=true", "course.beside: only a reference is drawn beside the course"},
+		{"activities.2.beside=false", "activities.2.beside: only a reference"},
 	} {
 		s := Default()
 		if err := s.Set(c.set); err != nil {
@@ -197,7 +205,7 @@ func TestWrite(t *testing.T) {
 	}
 	out := b.String()
 	for _, want := range []string{
-		"palette: light", "size: 13", "label-size: auto", "position: auto", "every: auto", "halo: auto", "by: none", "grade-cap: 15", "power-source: auto", "width: 1600", "height: 1000", "# The picture's width in pixels", "colours: []", "width: 2.25", "style: dashed",
+		"palette: light", "size: 13", "label-size: auto", "position: auto", "every: auto", "halo: auto", "by: none", "grade-cap: 15", "power-source: auto", "width: 1600", "height: 1000", "# The picture's width in pixels", "colours: []", "width: 2.25", "style: dashed", "beside: true", "# true: a reference drawn whole is drawn beside the course",
 		"# A hex colour", "# solid, dashed or dotted.", "colour: auto # light palette: #1b1b1b",
 		"Loop:", "width: 6",
 	} {
