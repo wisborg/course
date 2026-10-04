@@ -204,7 +204,15 @@ course map run.fit --reference auto
   and worst deviation -- so a map can say "Rhodes parkrun, 0.4 km in to 5.4 km, within 6 m".
 
 Averaging many runs of one course into a reference -- eighty parkruns make a better line
-than any one of them -- falls out of the same alignment, and is a later refinement.
+than any one of them -- falls out of the same alignment, and is built: `reference add NAME
+FILE...`. Every run is aligned to the first, and the arrivals matching already records --
+where and when a run reached each 10 m of the reference -- give, point by point, the median
+position and the median time from the start. The median and not the mean: on Rhodes
+parkrun, the bridge-closed run is 84 m off the others at its worst, and a mean of four would
+have put the line a quarter of the way down the detour. The alignment is done twice, the
+second time against the first average, so the line is the runs' and not the first run's.
+The average is stored as a GPX -- the one reference not kept as the file it came from --
+with the runs beside it as its evidence.
 
 ## Comparison
 

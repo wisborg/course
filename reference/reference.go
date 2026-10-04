@@ -8,6 +8,11 @@
 // runs along a course needs everything the recording has, and every
 // conversion drops something; and because a reference is a claim about where
 // a course goes, and the file is the evidence for it.
+//
+// A reference averaged from several runs is the one exception, being made
+// rather than recorded: it is stored as a GPX of the averaged line and its
+// times, and the runs it was averaged from are stored beside it, byte for
+// byte, as its evidence.
 package reference
 
 import (
@@ -23,6 +28,7 @@ import (
 	"unicode"
 
 	"github.com/wisborg/course"
+	"github.com/wisborg/course/match"
 )
 
 // Manifest is what a stored reference is: its reference.json.
@@ -39,8 +45,25 @@ type Manifest struct {
 	// missing. It is there so a reference can be ruled out -- by where it is
 	// and how long -- without reading its file.
 	Summary *Summary `json:"summary,omitempty"`
+	// Runs are, for a reference averaged from several, the runs it was
+	// averaged from, the first being the course the others were aligned
+	// to; nil for one stored from a file.
+	Runs []Run `json:"runs,omitempty"`
 
 	dir string
+}
+
+// Run is one of the runs an averaged reference was made from.
+type Run struct {
+	// File is the stored copy's name in the reference's directory, and
+	// From the name of the file it was copied from.
+	File string `json:"file"`
+	From string `json:"from"`
+	// Crop is which part of the first run is the course.
+	Crop *Crop `json:"crop,omitempty"`
+	// Used says the run followed the course and is in the average; a run
+	// that did not is kept, and left out of it.
+	Used bool `json:"used"`
 }
 
 // Crop is part of a course, by distance along it or by time since its start;
@@ -113,20 +136,9 @@ func Slug(name string) string {
 // alias or a slug another reference already answers to is refused too: a
 // name that finds two references finds neither.
 func (s Store) Add(name, path string, aliases []string, crop *Crop, note string) (Manifest, error) {
-	slug := Slug(name)
-	if slug == "" {
-		return Manifest{}, fmt.Errorf("%q has nothing a reference can be stored under; use letters or digits", name)
-	}
-	existing, err := s.List()
+	slug, err := s.claim(name, aliases)
 	if err != nil {
 		return Manifest{}, err
-	}
-	for _, want := range append([]string{name, slug}, aliases...) {
-		for _, m := range existing {
-			if m.answers(want) {
-				return Manifest{}, fmt.Errorf("%q is already taken by the reference %q", want, m.Name)
-			}
-		}
 	}
 	m := Manifest{
 		Name: name, Aliases: aliases, Source: "source" + strings.ToLower(filepath.Ext(path)),
@@ -152,6 +164,89 @@ func (s Store) Add(name, path string, aliases []string, crop *Crop, note string)
 		return Manifest{}, err
 	}
 	return m, nil
+}
+
+// claim is the slug a new reference called name, with aliases, is stored
+// under, or why it cannot be: nothing to make one of, or a name, alias or
+// slug another reference already answers to.
+func (s Store) claim(name string, aliases []string) (string, error) {
+	slug := Slug(name)
+	if slug == "" {
+		return "", fmt.Errorf("%q has nothing a reference can be stored under; use letters or digits", name)
+	}
+	existing, err := s.List()
+	if err != nil {
+		return "", err
+	}
+	for _, want := range append([]string{name, slug}, aliases...) {
+		for _, m := range existing {
+			if m.answers(want) {
+				return "", fmt.Errorf("%q is already taken by the reference %q", want, m.Name)
+			}
+		}
+	}
+	return slug, nil
+}
+
+// AddAverage stores the average of the runs in the files at paths as a
+// reference called name: the first file, cropped as crop says, is the
+// course, and the rest are aligned to it and averaged with it, as
+// match.Average does with o. The averaged line is stored as a GPX, the runs
+// beside it as they were, and the manifest says which runs are in the
+// average. As with Add, nothing is written until every file has been read
+// and the average made.
+func (s Store) AddAverage(name string, paths []string, aliases []string, crop *Crop, note string, o match.Options) (Manifest, match.Averaged, error) {
+	slug, err := s.claim(name, aliases)
+	if err != nil {
+		return Manifest{}, match.Averaged{}, err
+	}
+	runs := make([]*course.Course, len(paths))
+	for i, path := range paths {
+		c := crop
+		if i > 0 {
+			c = nil // matching finds the course in the others
+		}
+		if runs[i], err = read(path, c); err != nil {
+			return Manifest{}, match.Averaged{}, err
+		}
+	}
+	avg, err := match.Average(runs, o)
+	if err != nil {
+		return Manifest{}, match.Averaged{}, err
+	}
+	m := Manifest{
+		Name: name, Aliases: aliases, Source: "average.gpx",
+		Added: time.Now().Format("2006-01-02"), Note: note, Summary: summarise(avg.Course),
+	}
+	for i, path := range paths {
+		run := Run{File: fmt.Sprintf("run-%d%s", i+1, strings.ToLower(filepath.Ext(path))), From: filepath.Base(path), Used: avg.Runs[i].Used}
+		if i == 0 {
+			run.Crop = crop
+		}
+		m.Runs = append(m.Runs, run)
+	}
+
+	dir := filepath.Join(s.Dir, slug)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return Manifest{}, match.Averaged{}, err
+	}
+	fail := func(err error) (Manifest, match.Averaged, error) {
+		os.RemoveAll(dir)
+		return Manifest{}, match.Averaged{}, err
+	}
+	if err := writeGPX(filepath.Join(dir, m.Source), name, avg.Course); err != nil {
+		return fail(err)
+	}
+	for i, path := range paths {
+		if err := copyFile(path, filepath.Join(dir, m.Runs[i].File)); err != nil {
+			return fail(err)
+		}
+	}
+	m.dir = dir
+	if err := m.write(); err != nil {
+		return fail(err)
+	}
+	return m, avg, nil
 }
 
 // List is every reference in the store, by name. A store that does not exist

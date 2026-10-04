@@ -76,3 +76,34 @@ func TestReferenceCommands(t *testing.T) {
 		t.Errorf("an empty store lists as:\n%s", out)
 	}
 }
+
+// Several files make an averaged reference: stored, said to be the average
+// of the runs that followed the first, each with how closely, a run
+// elsewhere kept and left out; show lists them.
+func TestReferenceAddAverage(t *testing.T) {
+	resetUnits(t)
+	for _, c := range []*cobra.Command{referenceAdd, referenceShow} {
+		resetFlags(t, c)
+	}
+	t.Cleanup(func() { referencesDir = "" })
+	dir := t.TempDir()
+	refs := filepath.Join(dir, "refs")
+	a, b, far := filepath.Join(dir, "a.gpx"), filepath.Join(dir, "b.gpx"), filepath.Join(dir, "far.gpx")
+	writePaced(t, a, 200, func(i int) int { return 10 * i })
+	writePaced(t, b, 200, func(i int) int { return 11 * i })
+	writeFile(t, far, strings.ReplaceAll(readFile(t, a), `lat="10"`, `lat="10.05"`))
+	writePaced(t, filepath.Join(dir, "c.gpx"), 200, func(i int) int { return 12 * i })
+	out, err := run(t, "reference", "add", "--references", refs, "Loop", a, b, filepath.Join(dir, "c.gpx"), far)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	for _, want := range []string{"the average of 3 runs", "a.gpx    100% of it", "far.gpx  does not follow the first; kept, and left out"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %q in:\n%s", want, out)
+		}
+	}
+	out, err = run(t, "reference", "show", "--references", refs, "Loop")
+	if err != nil || !strings.Contains(out, "averaged a.gpx, the course the others were matched to (run-1.gpx)") || !strings.Contains(out, "far.gpx, left out: it does not follow the first (run-4.gpx)") {
+		t.Errorf("show: %v\n%s", err, out)
+	}
+}

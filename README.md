@@ -295,6 +295,21 @@ A stored reference is the original file, unchanged, with a note of which part of
 course -- `--from`/`--to` in time, or `--from-km`/`--to-km` -- kept under `course/references`
 in your configuration directory (`--references` for elsewhere).
 
+Given several runs of one course, `reference add` stores their average, which is a better
+line than any one of them and, with times, the pace of a typical run to `--compare` against:
+
+```
+./course reference add "Rhodes parkrun" usual.fit parkrun-*.fit --from 6m --to 34m
+```
+
+The first file is the course, cropped as `--from`/`--to` say; every other one is matched to
+it, so its warm-up and cool-down are left out without cropping. At every 10 m of the course
+the reference is the median of where the runs were, and of how long each had taken from the
+start -- the median, so a detour one run took, a closed bridge, does not bend the line. Each
+run is reported with how closely it followed the average, and one that does not follow the
+course is kept with the reference but left out of it. The average is stored as a GPX, and
+the runs beside it as they were.
+
 `match` finds where an activity followed stored references -- a parkrun inside a longer run,
 both parkruns of a morning, an official race course -- and how closely, with where it
 missed the course or left it; `map --reference auto` draws every reference it matched.

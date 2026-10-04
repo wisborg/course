@@ -13,6 +13,7 @@ import (
 	"github.com/wisborg/output"
 	"github.com/wisborg/output/table"
 
+	"github.com/wisborg/course/match"
 	"github.com/wisborg/course/reference"
 )
 
@@ -40,9 +41,19 @@ var addOpts struct {
 }
 
 var referenceAdd = &cobra.Command{
-	Use:   "add NAME FILE",
-	Short: "Store a course as a reference",
-	Args:  cobra.ExactArgs(2),
+	Use:   "add NAME FILE...",
+	Short: "Store a course as a reference, or the average of several runs of it",
+	Long: `Store a course as a reference: the course in FILE, or the average of every
+run of it in FILE....
+
+Given several files, the first is the course -- cropped by --from/--to or
+--from-km/--to-km if it carries more -- and each of the others is matched to
+it, so its warm-up and cool-down are left out without cropping. The reference
+is where the runs were, point by point: the median of their positions, and of
+their times from the course's start, so a detour one run took does not bend
+the line. A file that does not follow the first is kept and left out of the
+average, and said so.`,
+	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		crop, err := cropFlags()
 		if err != nil {
@@ -55,6 +66,30 @@ var referenceAdd = &cobra.Command{
 		u, err := unitsFor(cmd)
 		if err != nil {
 			return err
+		}
+		if len(args) > 2 {
+			m, avg, err := s.AddAverage(args[0], args[1:], addOpts.aliases, crop, addOpts.note, match.Options{})
+			if err != nil {
+				return err
+			}
+			used, width := 0, 0
+			for _, r := range m.Runs {
+				if r.Used {
+					used++
+				}
+				width = max(width, len(r.From))
+			}
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "stored %q, %s%s, the average of %d runs, in %s\n", m.Name, distance(m.Summary.LengthM, u), loopText(m.Summary), used, s.Dir)
+			for i, r := range m.Runs {
+				if !r.Used {
+					fmt.Fprintf(out, "  %-*s  does not follow the first; kept, and left out\n", width, r.From)
+					continue
+				}
+				mt := avg.Runs[i].Match
+				fmt.Fprintf(out, "  %-*s  %3.0f%% of it, median %s off, worst %s\n", width, r.From, 100*mt.Coverage, short(mt.Median, u), short(mt.Worst, u))
+			}
+			return nil
 		}
 		m, err := s.Add(args[0], args[1], addOpts.aliases, crop, addOpts.note)
 		if err != nil {
@@ -166,6 +201,20 @@ func writeManifest(w io.Writer, m reference.Manifest, u units.Set) {
 		}
 	}
 	fmt.Fprintf(w, "%-8s %s\n", "file", m.File())
+	for i, r := range m.Runs {
+		label := ""
+		if i == 0 {
+			label = "averaged"
+		}
+		what := "the course the others were matched to"
+		switch {
+		case i > 0 && r.Used:
+			what = "in the average"
+		case !r.Used:
+			what = "left out: it does not follow the first"
+		}
+		fmt.Fprintf(w, "%-8s %s, %s (%s)\n", label, r.From, what, r.File)
+	}
 	fmt.Fprintf(w, "%-8s %s\n", "added", m.Added)
 	if m.Note != "" {
 		fmt.Fprintf(w, "%-8s %s\n", "note", m.Note)
