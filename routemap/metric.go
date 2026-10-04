@@ -165,6 +165,33 @@ func Cadence(c *course.Course) ([]float64, string) {
 	return out, unit
 }
 
+// Temperature is each point's temperature from src, in °C, by fitactivity's
+// rule for choosing between the watch's and a footpod's, and NaN where src
+// has none.
+func Temperature(c *course.Course, src fitactivity.TemperatureSource) []float64 {
+	out := make([]float64, len(c.Points))
+	for i, p := range c.Points {
+		out[i] = math.NaN()
+		if t, ok := p.Temperature(src); ok {
+			out[i] = t
+		}
+	}
+	return out
+}
+
+// Humidity is each point's relative humidity, in per cent, and NaN where it
+// had none.
+func Humidity(c *course.Course) []float64 {
+	out := make([]float64, len(c.Points))
+	for i, p := range c.Points {
+		out[i] = math.NaN()
+		if p.HasHumidity {
+			out[i] = p.Humidity
+		}
+	}
+	return out
+}
+
 // AirPower is each point's air power, in watts -- a footpod's estimate of
 // the power spent against the air, mostly headwind -- and NaN where it had
 // none.

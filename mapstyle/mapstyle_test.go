@@ -15,7 +15,7 @@ func TestDefault(t *testing.T) {
 	if err := s.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if s.Colouring != (Colouring{By: "none", GradeCap: 15, PowerSource: "auto", Width: 3}) {
+	if s.Colouring != (Colouring{By: "none", GradeCap: 15, PowerSource: "auto", TemperatureSource: "auto", Width: 3}) {
 		t.Errorf("default colouring %+v", s.Colouring)
 	}
 	if s.Text.Size != 13 || s.Map.LabelSize != "auto" || s.Legend.Position != "auto" || s.Markers.Every != "auto" || s.Course.Halo != "auto" || s.Reference.Halo != "auto" {
@@ -135,7 +135,7 @@ func TestSet(t *testing.T) {
 		{"activities.two.width=3", "numbered from 1"},
 		{"palette.dark=1", "palette"},
 		{"width.x=1", "width is one setting"},
-		{"colouring.metric=pace", `no such setting "metric"; colouring has by, grade-cap, power-source, width`},
+		{"colouring.metric=pace", `no such setting "metric"; colouring has by, grade-cap, power-source, temperature-source, width`},
 		{"text.colour=#000000", `no such setting "colour"; text has size`},
 		{"markers.size=3", `no such setting "size"; markers has every`},
 		{"reference.beside=maybe", "reference.beside"},
@@ -220,5 +220,44 @@ func TestWrite(t *testing.T) {
 	}
 	if back.Palette != "light" || *back.Activities[1].Width != 6 || back.References["Loop"].Colour != "#0077aa" {
 		t.Errorf("read back: %+v", back)
+	}
+}
+
+// The units group is a system and a unit for each quantity, auto until one
+// is given; the colouring's temperature source is auto, stryd or native;
+// and a value that is none of these is refused by its path.
+func TestUnitsAndTemperatureSource(t *testing.T) {
+	s := Default()
+	if s.Units.Temperature != "auto" || s.Colouring.TemperatureSource != "auto" {
+		t.Errorf("defaults: %+v, %+v", s.Units, s.Colouring)
+	}
+	if u, err := s.Units.Set(); err != nil || u.Temperature.Name != "°C" {
+		t.Errorf("metric's temperature: %+v %v", u.Temperature, err)
+	}
+	for _, set := range []string{"units.system=imperial", "units.distance=nmi", "units.temperature=C", "colouring.temperature-source=native"} {
+		if err := s.Set(set); err != nil {
+			t.Fatalf("--set %s: %v", set, err)
+		}
+	}
+	u, err := s.Units.Set()
+	if err != nil || u.Distance.Name != "nmi" || u.Elevation.Name != "ft" || u.Temperature.Name != "°C" || s.Colouring.TemperatureSource != "native" {
+		t.Errorf("after --set: %+v %v, source %q", u, err, s.Colouring.TemperatureSource)
+	}
+	for _, c := range []struct{ set, want string }{
+		{"units.temperature=K", `units.temperature: "K" is not a unit of temperature; use C, F`},
+		{"units.system=nautical", "units.system"},
+		{"colouring.temperature-source=wrist", "colouring.temperature-source"},
+	} {
+		s := Default()
+		if err := s.Set(c.set); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Validate(); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", c.set, err, c.want)
+		}
+	}
+	var b bytes.Buffer
+	if err := Default().Write(&b, nil); err != nil || !strings.Contains(b.String(), "temperature-source: auto") || !strings.Contains(b.String(), "temperature: auto") {
+		t.Errorf("the written style lacks the temperature settings: %v\n%s", err, b.String())
 	}
 }

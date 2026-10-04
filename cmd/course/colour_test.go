@@ -101,7 +101,7 @@ func TestMapColour(t *testing.T) {
 		{[]string{"--colour", "elevation", plan}, "no elevation"},
 		{[]string{"--colour", "grade", plan}, "no elevation"},
 		{[]string{"--colour", "grade", oneHeight}, "too little elevation"},
-		{[]string{"--colour", "stride", run1}, `colouring.by: "stride" is not one; colour by pace, speed, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power, cadence, or none`},
+		{[]string{"--colour", "stride", run1}, `colouring.by: "stride" is not one; colour by pace, speed, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power, cadence, temperature, humidity, or none`},
 		{[]string{"--colour", "pace", "--grade-cap", "25", run1}, "--grade-cap is for --colour grade"},
 		{[]string{"--colour", "grade", "--grade-cap", "0", run1}, "more than 0"},
 		{[]string{"--colour", "pace", "--compare", run1, run1}, "use one"},
@@ -520,6 +520,83 @@ func TestMapColourCadenceAirPowerAndGradeAdjustedPace(t *testing.T) {
 		{[]string{"--colour", "grade-adjusted-pace", plan}, "no times"},
 	} {
 		resetNow(mapCmd)
+		_, err := run(t, append([]string{"map", "--store", store, "--out", out}, c.args...)...)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("map %v: %v, want an error saying %q", c.args, err, c.want)
+		}
+	}
+}
+
+// --colour temperature and humidity colour a recording by the air a footpod
+// felt, or the watch's own temperature, in the units asked for; each refused
+// on a file without what it needs.
+func TestMapColourTemperatureAndHumidity(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetUnits(t)
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	stryd, bare := filepath.Join(dir, "stryd.fit"), filepath.Join(dir, "bare.gpx")
+	opts := fittest.DefaultOptions()
+	opts.Count = 300
+	opts.DeveloperField, opts.DeveloperFieldScale = fitactivity.StrydTemperatureField, 10 // 10.0 to 39.9 °C
+	opts.DeveloperFields = []string{fitactivity.StrydHumidityField}
+	if err := fittest.WriteFile(stryd, opts); err != nil {
+		t.Fatal(err)
+	}
+	writeLine(t, bare, 10, 20, 0.0002, 50)
+	// A watch at 20 °C throughout, which the scale shows over 4 °C.
+	watch := filepath.Join(dir, "watch.gpx")
+	var b strings.Builder
+	b.WriteString(`<gpx xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><trkseg>`)
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&b, `<trkpt lat="10" lon="%s"><time>%s</time><extensions><gpxtpx:TrackPointExtension><gpxtpx:atemp>20</gpxtpx:atemp></gpxtpx:TrackPointExtension></extensions></trkpt>`,
+			ftoa6(20+float64(i)*0.0001), stamp(4*i))
+	}
+	b.WriteString(`</trkseg></trk></gpx>`)
+	writeFile(t, watch, b.String())
+	// A humidity of 1 to 4% -- a footpod's raw values scaled by a hundred --
+	// is too little to spend the ramp on, and is shown over 10%: -3 to 7.
+	damp := filepath.Join(dir, "damp.fit")
+	opts.DeveloperField, opts.DeveloperFieldScale, opts.DeveloperFields = fitactivity.StrydHumidityField, 100, nil
+	if err := fittest.WriteFile(damp, opts); err != nil {
+		t.Fatal(err)
+	}
+	store, out := filepath.Join(dir, "store"), filepath.Join(dir, "map.png")
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--colour", "temperature", stryd}, "by air (Stryd) temperature, "},
+		{[]string{"--colour", "temperature", "--temperature-source", "stryd", stryd}, "by air (Stryd) temperature, "},
+		{[]string{"--colour", "temperature", watch}, "by watch temperature, 18 °C (blue) to 22 °C (red)"},
+		{[]string{"--colour", "temperature", "--units", "imperial", watch}, "by watch temperature, 64 °F (blue) to 72 °F (red)"},
+		{[]string{"--colour", "temperature", "--unit", "temperature=F", watch}, "64 °F (blue)"},
+		{[]string{"--colour", "humidity", stryd}, "by humidity, "},
+		{[]string{"--colour", "humidity", damp}, "by humidity, -3% (blue) to 7% (red)"},
+	} {
+		resetNow(mapCmd)
+		unitOpts.system, unitOpts.each = "metric", nil
+		o, err := run(t, append([]string{"map", "--store", store, "--out", out, "--width", "300", "--height", "200"}, c.args...)...)
+		if err != nil || !strings.Contains(o, c.want) {
+			t.Errorf("map %v: %v\n%s\nwant %q", c.args, err, o, c.want)
+		}
+	}
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--colour", "temperature", bare}, "no temperature"},
+		{[]string{"--colour", "humidity", watch}, "no humidity, which a Stryd footpod measures"},
+		{[]string{"--colour", "temperature", "--temperature-source", "native", stryd}, "no native temperature; --temperature-source auto"},
+		{[]string{"--colour", "temperature", "--temperature-source", "wrist", stryd}, `colouring.temperature-source: "wrist" is invalid; use auto, stryd, or native`},
+		{[]string{"--colour", "pace", "--temperature-source", "native", stryd}, "--temperature-source is for --colour temperature"},
+	} {
+		resetNow(mapCmd)
+		unitOpts.system, unitOpts.each = "metric", nil
 		_, err := run(t, append([]string{"map", "--store", store, "--out", out}, c.args...)...)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("map %v: %v, want an error saying %q", c.args, err, c.want)

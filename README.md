@@ -110,10 +110,12 @@ units:                   # --units and --unit are the same; see Units
   elevation: auto        # m or ft
   speed: auto            # km/h, mph, kn or m/s
   pace: auto             # min/km or min/mi
+  temperature: auto      # C or F
 colouring:               # --colour, --grade-cap and --power-source are the same
   by: grade              # none, or pace, speed, grade-adjusted-pace, elevation, ...
   grade-cap: 15
   power-source: auto
+  temperature-source: auto
   width: 3               # the coloured line's width
 course:                  # the course, and with --separate every activity
   colour: "#ff5252"      # #rrggbb or #rrggbbaa, or auto for the palette's own
@@ -190,10 +192,12 @@ even on a map with nothing else in it.
 ./course map run.fit --colour air-power
 ./course map run.fit --colour cadence
 ./course map hilly.fit --colour grade-adjusted-pace
+./course map hike.fit --colour temperature
+./course map run.fit --colour humidity
 ```
 
 The metrics are `pace`, `speed`, `grade-adjusted-pace`, `elevation`, `grade`, `heart-rate`, `power`,
-`air-power` and `cadence`.
+`air-power`, `cadence`, `temperature` and `humidity`.
 
 `--colour` colours the course by a metric along it, from blue at its slowest or lowest to red
 at its fastest or highest, with a colour bar in the legend giving the pace, speed or height at each
@@ -245,6 +249,15 @@ Pace and grade are taken over the same 30 m either side.
 The ends of every scale but grade's leave out the most extreme 5% of the course's ground --
 by distance, not by points, so a toilet stop of ten minutes recorded a point a second does
 not become the slow end of the pace scale.
+
+`temperature` is the air's where a Stryd footpod measured it, and the watch's own otherwise.
+The two are not the same reading: a watch on a wrist reads warm, a few degrees above the
+footpod out in the wind, so `--temperature-source` chooses as `--power-source` does --
+`auto` (the footpod's if there is one), `stryd`, or `native` -- and the legend says which,
+in `°C` or, under `--units imperial` or `--unit temperature=F`, `°F`. `humidity` is a
+footpod's alone, FIT having no field of its own for it. Both are taken over 30 m either
+side, and shown over at least 4 °C and 10%, so a degree of drift is not drawn as
+weather.
 
 Where the file has no value -- no elevation for a stretch, a gap in the recording --
 the course is not coloured, and a course without times or without any elevation is refused
@@ -346,8 +359,8 @@ The design and what was measured on real courses are in
 ./course map ride.fit --colour speed --unit speed=m/s
 ```
 
-Every command reads and writes distance, elevation, speed and pace in metric unless told
-otherwise. `--units imperial` changes them all -- miles, feet, mph, min/mi -- and
+Every command reads and writes distance, elevation, speed, pace and temperature in metric
+unless told otherwise. `--units imperial` changes them all -- miles, feet, mph, min/mi, °F -- and
 `--unit QUANTITY=UNIT` changes one, after the system, for the mixtures some activities are
 read in: a flight has its altitude in feet, its distance in nautical miles and its speed in
 knots. The units are the common ones for each:
@@ -358,6 +371,7 @@ knots. The units are the common ones for each:
 | `elevation` | `m`, `ft`               |
 | `speed`     | `km/h`, `mph`, `kn`, `m/s` |
 | `pace`      | `min/km`, `min/mi`      |
+| `temperature` | `C`, `F`              |
 
 A short distance -- how far a run strayed from its reference in `match` -- is in the
 elevation unit, metres or feet. A number given in a distance follows the distance unit:

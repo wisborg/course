@@ -20,7 +20,7 @@ var unitOpts struct {
 func init() {
 	f := root.PersistentFlags()
 	f.StringVar(&unitOpts.system, "units", "metric", "the units numbers are shown in: metric or imperial; for a map the same as --set units.system=...")
-	f.StringArrayVar(&unitOpts.each, "unit", nil, "one quantity's unit, over --units: distance=km|mi|nmi, elevation=m|ft (also short distances, such as how far off a course), speed=km/h|mph|kn|m/s, pace=min/km|min/mi; repeat for several, as a flight's --units imperial --unit distance=nmi --unit speed=kn; for a map the same as --set units.QUANTITY=...")
+	f.StringArrayVar(&unitOpts.each, "unit", nil, "one quantity's unit, over --units: distance=km|mi|nmi, elevation=m|ft (also short distances, such as how far off a course), speed=km/h|mph|kn|m/s, pace=min/km|min/mi, temperature=C|F; repeat for several, as a flight's --units imperial --unit distance=nmi --unit speed=kn; for a map the same as --set units.QUANTITY=...")
 }
 
 // unitsFor is the units the flags ask for: --units, then every --unit over it.

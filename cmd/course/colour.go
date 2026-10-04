@@ -44,6 +44,15 @@ const minCadenceSpan = 10.0
 // two, and the whole ramp over them would colour noise as wind.
 const minAirPowerSpan = 10.0
 
+// minTemperatureSpan is the least range of temperature a course is coloured
+// over, in °C: a footpod reads to a tenth of a degree, and the whole ramp over
+// a degree of drift would colour a sensor warming up as weather.
+const minTemperatureSpan = 4.0
+
+// minHumiditySpan is the least range of humidity a course is coloured over,
+// in per cent, for the same reason.
+const minHumiditySpan = 10.0
+
 // anyKnown reports whether any of values is known.
 func anyKnown(values []float64) bool {
 	_, _, ok := routemap.Spread(values, 0)
@@ -70,6 +79,10 @@ type colourOptions struct {
 	// power is --power-source; powerGiven whether it was typed.
 	power      string
 	powerGiven bool
+	// temperature is --temperature-source; temperatureGiven whether it
+	// was typed.
+	temperature      string
+	temperatureGiven bool
 	// width is the coloured line's, in pixels on a map 1000 across.
 	width float64
 	// units are what the legend's ends are written in.
@@ -85,6 +98,14 @@ var powerSources = map[string]fitactivity.PowerSource{
 	"native": fitactivity.PowerNative,
 }
 
+// temperatureSources are --temperature-source's values, power's words for
+// the same choice between a footpod and a watch.
+var temperatureSources = map[string]fitactivity.TemperatureSource{
+	"auto":   fitactivity.TemperatureAuto,
+	"stryd":  fitactivity.TemperatureStryd,
+	"native": fitactivity.TemperatureNative,
+}
+
 // checkColour refuses a --colour the course cannot be coloured by, before
 // any map is fetched or drawn: an unknown metric, one the file does not
 // record at all, or --colour with --compare, which colours by something else.
@@ -98,6 +119,9 @@ func checkColour(c *course.Course, o colourOptions) error {
 	}
 	if o.powerGiven && o.metric != "power" {
 		return errors.New("--power-source is for --colour power")
+	}
+	if o.temperatureGiven && o.metric != "temperature" {
+		return errors.New("--temperature-source is for --colour temperature")
 	}
 	src := powerSources[o.power] // a source the style's validation knows
 	switch o.metric {
@@ -136,6 +160,18 @@ func checkColour(c *course.Course, o colourOptions) error {
 				return errors.New("--colour power: the course records no power")
 			}
 			return fmt.Errorf("--colour power: the course records no %s power; --power-source auto takes whichever it has", src)
+		}
+	case "temperature":
+		tsrc := temperatureSources[o.temperature]
+		if !anyKnown(routemap.Temperature(c, tsrc)) {
+			if tsrc == fitactivity.TemperatureAuto {
+				return errors.New("--colour temperature: the course records no temperature")
+			}
+			return fmt.Errorf("--colour temperature: the course records no %s temperature; --temperature-source auto takes whichever it has", tsrc)
+		}
+	case "humidity":
+		if !anyKnown(routemap.Humidity(c)) {
+			return errors.New("--colour humidity: the course records no humidity, which a Stryd footpod measures")
 		}
 	default:
 		return fmt.Errorf("--colour %q: colour by %s", o.metric, colourMetrics)
@@ -266,6 +302,20 @@ func colourBy(cs []*course.Course, name string, o colourOptions, scale float64) 
 		lo, hi, _ := spread(vs)
 		lo, hi = byShare(lo, hi, minPowerSpread)
 		r = plain(lo, hi, number("W"))
+	case "temperature":
+		src := temperatureSources[o.temperature]
+		label = temperatureSensor(cs, src) + " temperature"
+		vs = all(func(c *course.Course) []float64 { return routemap.Around(c, routemap.Temperature(c, src), paceAround) })
+		lo, hi, _ := spread(vs)
+		lo, hi = routemap.Widen(lo, hi, minTemperatureSpan)
+		u := o.units.Temperature
+		r = plain(lo, hi, func(v float64) string { return fmt.Sprintf("%.0f %s", u.FromSI(v), u.Name) })
+	case "humidity":
+		label = "humidity"
+		vs = all(func(c *course.Course) []float64 { return routemap.Around(c, routemap.Humidity(c), paceAround) })
+		lo, hi, _ := spread(vs)
+		lo, hi = routemap.Widen(lo, hi, minHumiditySpan)
+		r = plain(lo, hi, func(v float64) string { return fmt.Sprintf("%.0f%%", v) })
 	default:
 		return nil, fmt.Errorf("--colour %q: colour by %s", o.metric, colourMetrics)
 	}
@@ -306,8 +356,28 @@ func powerSensor(cs []*course.Course, src fitactivity.PowerSource) string {
 	return "native"
 }
 
+// temperatureSensor is which sensor's temperature src takes on cs, in words
+// for the legend and the report, as powerSensor is for power: the air's, a
+// footpod's, or the watch's, which on a wrist reads several degrees warmer.
+func temperatureSensor(cs []*course.Course, src fitactivity.TemperatureSource) string {
+	if src == fitactivity.TemperatureNative {
+		return "watch"
+	}
+	if src == fitactivity.TemperatureStryd {
+		return "air (Stryd)"
+	}
+	for _, c := range cs {
+		for _, p := range c.Points {
+			if p.HasStrydTemperature {
+				return "air (Stryd)"
+			}
+		}
+	}
+	return "watch"
+}
+
 // colourMetrics are what --colour takes, in words.
-const colourMetrics = "pace, speed, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power or cadence"
+const colourMetrics = "pace, speed, grade-adjusted-pace, elevation, grade, heart-rate, power, air-power, cadence, temperature or humidity"
 
 // gradeWindow is how far either side of a point its grade is taken over, in
 // metres. Narrower than the 30 m videofx and fitdash read a grade over:

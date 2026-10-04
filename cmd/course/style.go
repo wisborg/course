@@ -28,7 +28,7 @@ var mapStyleCmd = &cobra.Command{
 	Short: "Print the style a map would be drawn in, every setting with a comment",
 	Long: `style prints, as YAML, the style course map draws in with the same --style,
 --set and the flags that are settings of it -- --palette, --width, --height,
---units, --unit, --legend, --colour, --grade-cap and --power-source: the built-in defaults, then the file's settings over
+--units, --unit, --legend, --colour, --grade-cap, --power-source and --temperature-source: the built-in defaults, then the file's settings over
 them, then the command line's. Every setting is there, with a comment saying
 what it takes, so
 
@@ -96,8 +96,10 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 			st.Units.Speed = name
 		case units.Pace:
 			st.Units.Pace = name
+		case units.Temperature:
+			st.Units.Temperature = name
 		default:
-			return st, fmt.Errorf("--unit %s: %q is not a quantity with units; use distance, elevation, speed or pace", e, q)
+			return st, fmt.Errorf("--unit %s: %q is not a quantity with units; use distance, elevation, speed, pace or temperature", e, q)
 		}
 	}
 	if cmd.Flags().Changed("legend") {
@@ -111,6 +113,9 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	}
 	if cmd.Flags().Changed("power-source") {
 		st.Colouring.PowerSource = mapOpts.power
+	}
+	if cmd.Flags().Changed("temperature-source") {
+		st.Colouring.TemperatureSource = mapOpts.temperature
 	}
 	for _, s := range styleOpts.sets {
 		if err := st.Set(s); err != nil {

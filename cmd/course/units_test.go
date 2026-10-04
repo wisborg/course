@@ -29,7 +29,7 @@ func TestUnitsFor(t *testing.T) {
 	resetUnits(t)
 	unitOpts.system, unitOpts.each = "imperial", []string{"distance=nmi", "speed=kn"}
 	u, err := unitsFor(&cobra.Command{})
-	if err != nil || u != (units.Set{Distance: units.NauticalMile, Elevation: units.Foot, Speed: units.Knot, Pace: units.MinutesPerMile}) {
+	if err != nil || u != (units.Set{Distance: units.NauticalMile, Elevation: units.Foot, Speed: units.Knot, Pace: units.MinutesPerMile, Temperature: units.Fahrenheit}) {
 		t.Errorf("a flight's units: %+v %v", u, err)
 	}
 	for _, c := range []struct {

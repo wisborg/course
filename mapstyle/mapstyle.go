@@ -71,11 +71,12 @@ type Style struct {
 // quantity, auto for the system's -- so a flight is imperial with its
 // distance in nautical miles and its speed in knots.
 type Units struct {
-	System    string `yaml:"system"`
-	Distance  string `yaml:"distance"`
-	Elevation string `yaml:"elevation"`
-	Speed     string `yaml:"speed"`
-	Pace      string `yaml:"pace"`
+	System      string `yaml:"system"`
+	Distance    string `yaml:"distance"`
+	Elevation   string `yaml:"elevation"`
+	Speed       string `yaml:"speed"`
+	Pace        string `yaml:"pace"`
+	Temperature string `yaml:"temperature"`
 }
 
 // Set is u as the units in use.
@@ -87,7 +88,7 @@ func (u Units) Set() (units.Set, error) {
 	for _, q := range []struct {
 		q    units.Quantity
 		name string
-	}{{units.Distance, u.Distance}, {units.Elevation, u.Elevation}, {units.Speed, u.Speed}, {units.Pace, u.Pace}} {
+	}{{units.Distance, u.Distance}, {units.Elevation, u.Elevation}, {units.Speed, u.Speed}, {units.Pace, u.Pace}, {units.Temperature, u.Temperature}} {
 		if q.name == "auto" {
 			continue
 		}
@@ -141,6 +142,9 @@ type Colouring struct {
 	// PowerSource is, with By power, which of a recording's two power
 	// readings: one of PowerSources.
 	PowerSource string `yaml:"power-source"`
+	// TemperatureSource is, with By temperature, which of a recording's
+	// two temperatures: one of PowerSources, which it shares.
+	TemperatureSource string `yaml:"temperature-source"`
 	// Width is the coloured line's, in pixels on a map 1000 pixels across.
 	Width float64 `yaml:"width"`
 }
@@ -149,7 +153,7 @@ type Colouring struct {
 // readings it can be coloured by -- the same three, meaning the same, as
 // videofx's and fitdash's --power-source.
 var (
-	Metrics      = []string{"pace", "speed", "grade-adjusted-pace", "elevation", "grade", "heart-rate", "power", "air-power", "cadence"}
+	Metrics      = []string{"pace", "speed", "grade-adjusted-pace", "elevation", "grade", "heart-rate", "power", "air-power", "cadence", "temperature", "humidity"}
 	PowerSources = []string{"auto", "stryd", "native"}
 )
 
@@ -193,12 +197,12 @@ func Default() Style {
 		Palette:    "light",
 		Width:      1600,
 		Height:     1000,
-		Units:      Units{System: "metric", Distance: "auto", Elevation: "auto", Speed: "auto", Pace: "auto"},
+		Units:      Units{System: "metric", Distance: "auto", Elevation: "auto", Speed: "auto", Pace: "auto", Temperature: "auto"},
 		Text:       Text{Size: 13},
 		Map:        Map{LabelSize: "auto"},
 		Legend:     Legend{Position: "auto"},
 		Markers:    Markers{Every: "auto"},
-		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto", Width: 3},
+		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto", TemperatureSource: "auto", Width: 3},
 		Course:     Line{Colour: "auto", Colours: []string{}, Width: ptr(3), Opacity: "auto", Style: "solid", Halo: "auto"},
 		Activities: []Line{},
 		Reference:  Line{Colour: "auto", Colours: []string{}, Width: ptr(2.25), Opacity: "auto", Style: "dashed", Halo: "auto", Beside: yes(true)},
@@ -339,12 +343,12 @@ var (
 	lineKeys = []string{"colour", "colours", "width", "opacity", "style", "halo", "beside"}
 	// groupKeys are the settings of each group that is not a line.
 	groupKeys = map[string][]string{
-		"units":     {"system", "distance", "elevation", "speed", "pace"},
+		"units":     {"system", "distance", "elevation", "speed", "pace", "temperature"},
 		"text":      {"size"},
 		"map":       {"label-size"},
 		"legend":    {"position"},
 		"markers":   {"every"},
-		"colouring": {"by", "grade-cap", "power-source", "width"},
+		"colouring": {"by", "grade-cap", "power-source", "temperature-source", "width"},
 	}
 )
 
@@ -463,6 +467,9 @@ func (s Style) Validate() error {
 	if !slices.Contains(PowerSources, s.Colouring.PowerSource) {
 		// The words videofx and fitdash refuse it in.
 		return fmt.Errorf("colouring.power-source: %q is invalid; use auto, stryd, or native", s.Colouring.PowerSource)
+	}
+	if !slices.Contains(PowerSources, s.Colouring.TemperatureSource) {
+		return fmt.Errorf("colouring.temperature-source: %q is invalid; use auto, stryd, or native", s.Colouring.TemperatureSource)
 	}
 	if err := s.Course.check("course", true, true); err != nil {
 		return err
@@ -628,49 +635,51 @@ func comment(n *yaml.Node, path string, autos map[string]string) {
 }
 
 var descriptions = map[string]string{
-	"palette":                "The map's colours: light or dark.",
-	"width":                  "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
-	"height":                 "The picture's height in pixels.",
-	"units":                  "The units numbers are shown in. --units and --unit are the same as\nsetting these, for this and every other command.",
-	"units.system":           "metric or imperial.",
-	"units.distance":         "auto for the system's, or km, mi, nmi.",
-	"units.elevation":        "auto for the system's, or m, ft. Also short distances, such as how far\na run strayed from a course.",
-	"units.speed":            "auto for the system's, or km/h, mph, kn, m/s.",
-	"units.pace":             "auto for the system's, or min/km, min/mi.",
-	"text":                   "The text course writes over the map: start and finish, the distance\nmarkers' numbers, the legend, the map's credit.",
-	"text.size":              "In pixels on a map 1000 pixels across; scaled with the map.",
-	"map":                    "The map under the course.",
-	"map.label-size":         "The size of the map's own names, streets and places, in pixels on a map\n1000 pixels across and scaled with it; or auto, for 13 pixels at any size.",
-	"legend":                 "The legend saying what each line or colour is.",
-	"legend.position":        "top-left, top-right, bottom-left or bottom-right; auto for whichever covers\nleast of the course; none for no legend. --legend is the same as setting it.",
-	"markers":                "The distance markers, on a course whose file recorded distance.",
-	"markers.every":          "The distance between them, in the distance unit; auto for one that suits\nthe course's length; none for no markers.",
-	"colouring":              "What the course's line is coloured by along it; --colour, --grade-cap and\n--power-source are the same as setting these.",
-	"colouring.by":           "none, or one of pace, speed, grade-adjusted-pace, elevation, grade,\nheart-rate, power, air-power, cadence.",
-	"colouring.grade-cap":    "With by: grade, the steepest grade the colours tell apart, in per cent\neither way; steeper takes the end colour.",
-	"colouring.power-source": "With by: power, which reading when a file has both: auto (a footpod's,\nsuch as Stryd's, if there is one), stryd, or native (the watch's).",
-	"colouring.width":        "The coloured line's width, in pixels on a map 1000 pixels across.",
-	"course.halo":            "A band of the map's background either side of the line, in pixels on a\nmap 1000 across; auto: a slim one on an opaque line, none on a translucent one.",
-	"reference.halo":         "As for course.",
-	"reference.beside":       "true: a reference drawn whole is drawn beside the course where the two\nshare a road, in a lane of its own, as a transit map draws lines; false:\nunder it, the course narrowed so it shows along the edges.",
-	"override.beside":        "true or false; references only.",
-	"override.halo":          "In pixels on a map 1000 pixels across, or auto.",
-	"course":                 "The course, and with --separate every activity unless activities says otherwise.",
-	"course.colour":          "A hex colour, #rrggbb or #rrggbbaa, or auto for the palette's own.\nWith --separate, activity 1's.",
-	"course.colours":         "With --separate, the 2nd, 3rd, ... activities' colours, taken in turn.\nEmpty is the palette's own.",
-	"course.width":           "In pixels on a map 1000 pixels across; scaled with the map.",
-	"course.opacity":         "From 0 to 1, or auto: 0.7, so the map shows through, but 1 -- with a\nslim halo -- when a reference is drawn whole over the course.",
-	"course.style":           "solid, dashed or dotted.",
-	"activities":             "With --separate, settings for single activities, by position: the first\nentry is activity 1, as numbered on the map. Each needs only what differs\nfrom course: colour, width, opacity, style. On the command line:\n--set activities.2.colour=#1565c0",
-	"reference":              "Every reference, unless references says otherwise.",
-	"reference.colour":       "One hex colour for every reference, or auto to take colours in turn.",
-	"reference.colours":      "Hex colours taken in turn, one for each reference. Empty is the\npalette's own.",
-	"reference.width":        "In pixels on a map 1000 pixels across; scaled with the map.",
-	"reference.opacity":      "From 0 to 1, or auto, as for course.",
-	"reference.style":        "solid, dashed or dotted.",
-	"references":             "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle, halo, beside. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
-	"override.colour":        "A hex colour, #rrggbb or #rrggbbaa.",
-	"override.width":         "In pixels on a map 1000 pixels across.",
-	"override.opacity":       "From 0 to 1, or auto.",
-	"override.style":         "solid, dashed or dotted.",
+	"palette":                      "The map's colours: light or dark.",
+	"width":                        "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
+	"height":                       "The picture's height in pixels.",
+	"units":                        "The units numbers are shown in. --units and --unit are the same as\nsetting these, for this and every other command.",
+	"units.system":                 "metric or imperial.",
+	"units.distance":               "auto for the system's, or km, mi, nmi.",
+	"units.elevation":              "auto for the system's, or m, ft. Also short distances, such as how far\na run strayed from a course.",
+	"units.speed":                  "auto for the system's, or km/h, mph, kn, m/s.",
+	"units.pace":                   "auto for the system's, or min/km, min/mi.",
+	"units.temperature":            "auto for the system's, or C, F.",
+	"text":                         "The text course writes over the map: start and finish, the distance\nmarkers' numbers, the legend, the map's credit.",
+	"text.size":                    "In pixels on a map 1000 pixels across; scaled with the map.",
+	"map":                          "The map under the course.",
+	"map.label-size":               "The size of the map's own names, streets and places, in pixels on a map\n1000 pixels across and scaled with it; or auto, for 13 pixels at any size.",
+	"legend":                       "The legend saying what each line or colour is.",
+	"legend.position":              "top-left, top-right, bottom-left or bottom-right; auto for whichever covers\nleast of the course; none for no legend. --legend is the same as setting it.",
+	"markers":                      "The distance markers, on a course whose file recorded distance.",
+	"markers.every":                "The distance between them, in the distance unit; auto for one that suits\nthe course's length; none for no markers.",
+	"colouring":                    "What the course's line is coloured by along it; --colour, --grade-cap,\n--power-source and --temperature-source are the same as setting these.",
+	"colouring.by":                 "none, or one of pace, speed, grade-adjusted-pace, elevation, grade,\nheart-rate, power, air-power, cadence, temperature, humidity.",
+	"colouring.grade-cap":          "With by: grade, the steepest grade the colours tell apart, in per cent\neither way; steeper takes the end colour.",
+	"colouring.power-source":       "With by: power, which reading when a file has both: auto (a footpod's,\nsuch as Stryd's, if there is one), stryd, or native (the watch's).",
+	"colouring.temperature-source": "With by: temperature, which reading when a file has both: auto (a\nfootpod's of the air, such as Stryd's, if there is one), stryd, or native\n(the watch's, which reads warm on a wrist).",
+	"colouring.width":              "The coloured line's width, in pixels on a map 1000 pixels across.",
+	"course.halo":                  "A band of the map's background either side of the line, in pixels on a\nmap 1000 across; auto: a slim one on an opaque line, none on a translucent one.",
+	"reference.halo":               "As for course.",
+	"reference.beside":             "true: a reference drawn whole is drawn beside the course where the two\nshare a road, in a lane of its own, as a transit map draws lines; false:\nunder it, the course narrowed so it shows along the edges.",
+	"override.beside":              "true or false; references only.",
+	"override.halo":                "In pixels on a map 1000 pixels across, or auto.",
+	"course":                       "The course, and with --separate every activity unless activities says otherwise.",
+	"course.colour":                "A hex colour, #rrggbb or #rrggbbaa, or auto for the palette's own.\nWith --separate, activity 1's.",
+	"course.colours":               "With --separate, the 2nd, 3rd, ... activities' colours, taken in turn.\nEmpty is the palette's own.",
+	"course.width":                 "In pixels on a map 1000 pixels across; scaled with the map.",
+	"course.opacity":               "From 0 to 1, or auto: 0.7, so the map shows through, but 1 -- with a\nslim halo -- when a reference is drawn whole over the course.",
+	"course.style":                 "solid, dashed or dotted.",
+	"activities":                   "With --separate, settings for single activities, by position: the first\nentry is activity 1, as numbered on the map. Each needs only what differs\nfrom course: colour, width, opacity, style. On the command line:\n--set activities.2.colour=#1565c0",
+	"reference":                    "Every reference, unless references says otherwise.",
+	"reference.colour":             "One hex colour for every reference, or auto to take colours in turn.",
+	"reference.colours":            "Hex colours taken in turn, one for each reference. Empty is the\npalette's own.",
+	"reference.width":              "In pixels on a map 1000 pixels across; scaled with the map.",
+	"reference.opacity":            "From 0 to 1, or auto, as for course.",
+	"reference.style":              "solid, dashed or dotted.",
+	"references":                   "Settings for single references, by name: a stored reference's name, a\nfile's without its extension, or Great circle, Great circle 1, ...\nEach needs only what differs from reference: colour, width, opacity,\nstyle, halo, beside. On the command line: --set 'references.Rhodes parkrun.colour=#0077aa'",
+	"override.colour":              "A hex colour, #rrggbb or #rrggbbaa.",
+	"override.width":               "In pixels on a map 1000 pixels across.",
+	"override.opacity":             "From 0 to 1, or auto.",
+	"override.style":               "solid, dashed or dotted.",
 }

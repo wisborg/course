@@ -85,6 +85,20 @@ type Point struct {
 	// against the air here, in watts: part of StrydPower, mostly headwind.
 	HasAirPower bool
 	AirPower    float64
+
+	// A recording can carry two temperatures too, in °C: the watch's own
+	// (Native), taken on a wrist and reading warm, and a footpod's of the
+	// air (Stryd). Which one is meant is the caller's to say, through
+	// Temperature.
+	HasNativeTemperature bool
+	NativeTemperature    float64
+	HasStrydTemperature  bool
+	StrydTemperature     float64
+
+	// HasHumidity reports whether a footpod measured the relative humidity
+	// here, in per cent; FIT's own record has no field for it.
+	HasHumidity bool
+	Humidity    float64
 }
 
 // Power is the power at the point from src, in watts, and whether there is
@@ -98,6 +112,17 @@ func (p Point) Power(src fitactivity.PowerSource) (float64, bool) {
 		s.DevFields = map[string]float64{fitactivity.StrydPowerField: p.StrydPower}
 	}
 	return s.ResolvedPower(src)
+}
+
+// Temperature is the temperature at the point from src, in °C, and whether
+// there is one, by fitactivity's rule for choosing between the two sensors,
+// as Power is.
+func (p Point) Temperature(src fitactivity.TemperatureSource) (float64, bool) {
+	s := fitactivity.Sample{HasTemperature: p.HasNativeTemperature, Temperature: int8(math.Round(p.NativeTemperature))}
+	if p.HasStrydTemperature {
+		s.DevFields = map[string]float64{fitactivity.StrydTemperatureField: p.StrydTemperature}
+	}
+	return s.ResolvedTemperature(src)
 }
 
 // Read reads the course in the files at paths, several of which are merged as
@@ -145,6 +170,7 @@ func fromTrack(t *fitactivity.Track) *Course {
 			HasHeartRate: s.HasHeartRate, HeartRate: float64(s.HeartRate),
 			HasNativePower: s.HasPower, NativePower: float64(s.Power),
 			HasCadence: s.HasCadence, Cadence: float64(s.Cadence),
+			HasNativeTemperature: s.HasTemperature, NativeTemperature: float64(s.Temperature),
 		}, at: s.Time, timed: true})
 		p := &fixes[len(fixes)-1].Point
 		if w, ok := s.DevFields[fitactivity.StrydPowerField]; ok {
@@ -152,6 +178,12 @@ func fromTrack(t *fitactivity.Track) *Course {
 		}
 		if w, ok := s.DevFields[fitactivity.StrydAirPowerField]; ok {
 			p.HasAirPower, p.AirPower = true, w
+		}
+		if v, ok := s.DevFields[fitactivity.StrydTemperatureField]; ok {
+			p.HasStrydTemperature, p.StrydTemperature = true, v
+		}
+		if v, ok := s.Humidity(); ok {
+			p.HasHumidity, p.Humidity = true, v
 		}
 	}
 	c.Points, c.Dropped = keepPlausible(fixes)

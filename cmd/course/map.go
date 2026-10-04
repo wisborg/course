@@ -45,6 +45,7 @@ var mapOpts struct {
 	colour        string
 	gradeCap      float64
 	power         string
+	temperature   string
 	legend        string
 	titles        []string
 	separate      bool
@@ -91,8 +92,9 @@ func init() {
 	mapCmd.PersistentFlags().StringVar(&mapOpts.legend, "legend", "auto", "where the legend goes: top-left, top-right, bottom-left or bottom-right; auto for whichever of them covers least of the course; none for no legend; the same as --set legend.position=..., and before any --set")
 	f.StringArrayVar(&mapOpts.titles, "title", nil, "what the legend calls the course (default: its file's name); with --separate, once for each activity, in the order given")
 	f.BoolVar(&mapOpts.separate, "separate", false, "draw several files as separate activities, each in its own colour with its own start and finish, rather than merged into one")
-	mapCmd.PersistentFlags().StringVar(&mapOpts.colour, "colour", "none", "colour the course by a metric along it: pace, speed, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power or cadence; the same as --set colouring.by=..., and before any --set")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.colour, "colour", "none", "colour the course by a metric along it: pace, speed, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power, cadence, temperature or humidity; the same as --set colouring.by=..., and before any --set")
 	mapCmd.PersistentFlags().StringVar(&mapOpts.power, "power-source", "auto", "with --colour power, which power reading when the file carries both a footpod's (Stryd) developer field and the standard FIT power field -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; the two can disagree, being different sensors")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.temperature, "temperature-source", "auto", "with --colour temperature, which temperature when the file carries both a footpod's (Stryd) of the air and the watch's own -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; a watch on a wrist reads warm")
 	mapCmd.PersistentFlags().Float64Var(&mapOpts.gradeCap, "grade-cap", 15, "with --colour grade, the steepest grade the colours tell apart, in per cent either way; steeper takes the end colour")
 	f.StringVar(&mapOpts.compare, "compare", "", "colour the course by how much faster or slower it was than another run of it, place by place: a stored reference's name or a file")
 	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
@@ -133,6 +135,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		metric: metric, compare: mapOpts.compare,
 		gradeCap: st.Colouring.GradeCap, gradeCapGiven: cmd.Flags().Changed("grade-cap"),
 		power: st.Colouring.PowerSource, powerGiven: cmd.Flags().Changed("power-source"),
+		temperature: st.Colouring.TemperatureSource, temperatureGiven: cmd.Flags().Changed("temperature-source"),
 		width: st.Colouring.Width,
 		units: set,
 	}
