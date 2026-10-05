@@ -129,3 +129,84 @@ func TestWithReferencesBeside(t *testing.T) {
 		t.Errorf("a followed reference took the first lane: the whole one is %.2f px off, want 4", lane(render.Line{Points: got.Lines[1].Points}))
 	}
 }
+
+// Two references that leave the course together are drawn side by side on
+// the road they take instead, not through each other: the second beside the
+// first there, a lane apart, as it was beside the course while both were on
+// it -- and the change from the one to the other is not a jump.
+func TestBesideKeepsTwoReferencesApartAwayFromTheCourse(t *testing.T) {
+	c := line1km()
+	v := view(c)
+	along := coords(c)
+	// Along the course's first half, then north 220 m, then east again on a
+	// parallel road the course never took. Both references go this way.
+	var both []render.Coord
+	half := len(along) / 2
+	both = append(both, along[:half]...)
+	last := along[half-1]
+	for k := 1; k <= 20; k++ {
+		both = append(both, render.Coord{Lat: last.Lat + float64(k)*0.0001, Lon: last.Lon + float64(k)*0.00001})
+	}
+	top := both[len(both)-1]
+	for k := 1; k <= 50; k++ {
+		both = append(both, render.Coord{Lat: top.Lat, Lon: top.Lon + float64(k)*0.0001})
+	}
+
+	const offA, offB = 4.0, 9.0
+	a := besideLanes(both, []lane{{along: along, offset: offA}}, v)
+	b := besideLanes(both, []lane{{along: along, offset: offB}, {along: a, offset: offB - offA, way: 1}}, v)
+
+	// On the parallel road, away from its ends: B is the lane gap south of A.
+	for i := len(both) - 35; i < len(both)-10; i++ {
+		pa, pb := pixel(v, a[i]), pixel(v, b[i])
+		if math.Abs(pb[1]-pa[1]-(offB-offA)) > 0.3 || math.Abs(pb[0]-pa[0]) > 0.3 {
+			t.Fatalf("point %d on the road off the course: B is (%.2f, %.2f) px from A, want (0, %.0f)", i, pb[0]-pa[0], pb[1]-pa[1], offB-offA)
+		}
+	}
+	// On the course, B is in its own lane, as before.
+	for i := 20; i < half-20; i++ {
+		if d := pixel(v, b[i])[1] - pixel(v, along[i])[1]; math.Abs(d-offB) > 0.3 {
+			t.Fatalf("point %d on the course: B is %.2f px from it, want %.0f", i, d, offB)
+		}
+	}
+	// And B never jumps between neighbours by more than the line itself moves.
+	worst := 0.0
+	for i := 1; i < len(b); i++ {
+		shift := func(j int) float64 { return pixelDistance(v, both[j], b[j]) }
+		worst = math.Max(worst, math.Abs(shift(i)-shift(i-1)))
+	}
+	if worst > 3 {
+		t.Errorf("B's lane jumps by %.1f px between neighbours; want it eased", worst)
+	}
+}
+
+// Beside an earlier reference that goes out and back along the course --
+// drawn in lanes on both sides of the road -- a later one keeps its own
+// lane on both legs, a steady distance from the course, and does not flick
+// to the earlier one's other side from point to point: on Rhodes parkrun it
+// did, and was drawn as a zigzag of dashes.
+func TestBesideIsSteadyBesideAnOutAndBack(t *testing.T) {
+	c := line1km()
+	v := view(c)
+	along := coords(c)
+	var trip []render.Coord
+	trip = append(trip, along...)
+	for i := len(along) - 1; i >= 0; i-- {
+		trip = append(trip, along[i])
+	}
+	const offA, offB = 4.0, 9.0
+	a := besideLanes(trip, []lane{{along: along, offset: offA}}, v)
+	b := besideLanes(trip, []lane{{along: along, offset: offB}, {along: a, offset: offB - offA, way: 1}, {along: a, offset: offB - offA, way: -1}}, v)
+	n := len(along)
+	for _, leg := range []struct {
+		from, to int
+		want     float64 // south of the course, in px: out east is south, back west is north
+	}{{20, n - 20, offB}, {n + 20, 2*n - 20, -offB}} {
+		for i := leg.from; i < leg.to; i++ {
+			got := pixel(v, b[i])[1] - pixel(v, trip[i])[1]
+			if math.Abs(got-leg.want) > 0.3 {
+				t.Fatalf("point %d: %.2f px from the course, want %.0f", i, got, leg.want)
+			}
+		}
+	}
+}

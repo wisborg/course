@@ -176,6 +176,14 @@ func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, looks
 	under := false // a reference drawn whole, and not beside
 	reach := half
 	moved := make([]Reference, len(refs))
+	// The references already in lanes, as drawn, and each one's distance
+	// from the course: a later one is drawn beside them, too, where it runs
+	// along one away from the course. See besideLanes.
+	type placed struct {
+		points []render.Coord
+		offset float64
+	}
+	var done []placed
 	for i, r := range refs {
 		moved[i] = r
 		if r.Follows {
@@ -189,7 +197,17 @@ func WithReferences(d render.Drawing, refs []Reference, inks []color.RGBA, looks
 		w := look.Width*scale/2 + look.Halo*scale
 		offset := reach + laneGap*scale + w
 		reach = offset + w
-		moved[i].Points = beside(r.Points, along, v, offset)
+		// The course; then the earlier references heading the same way,
+		// the last placed first; then those heading the other way. See
+		// besideLanes for why in that order.
+		lanes := []lane{{along: along, offset: offset}}
+		for _, way := range []int{1, -1} {
+			for k := len(done) - 1; k >= 0; k-- {
+				lanes = append(lanes, lane{along: done[k].points, offset: offset - done[k].offset, way: way})
+			}
+		}
+		moved[i].Points = besideLanes(r.Points, lanes, v)
+		done = append(done, placed{moved[i].Points, offset})
 	}
 	lines := ReferenceLines(moved, inks, looks, halo, scale)
 	if len(lines) == 0 {

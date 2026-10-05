@@ -160,10 +160,17 @@ coloured edge. To try later:
   references alternately right and left, and on Rhodes parkrun, an out-and-back, one
   reference's way back fell in the other's lane out, two dashed lines drawn through each
   other. Every reference now takes the right of its own direction, each in a lane further out
-  than the last, so no two coincide whichever way they run. Two references that leave the
-  course together are still drawn over each other there: lanes are measured from the course,
-  not from one another. `reference.beside: false` keeps the narrowed course with references
-  along its edges.
+  than the last, so no two coincide whichever way they run. Lanes were measured from the
+  course alone at first, so two references that left it together -- the two usual weeks on
+  Rhodes parkrun drawn over the bridge-closed one, both crossing the bridge it could not --
+  were drawn through each other there. Now a reference that runs along an earlier one away
+  from the course is drawn beside it, the gap between their lanes apart, measured from where
+  the earlier one is drawn. Along the course it keeps its course lane; choosing per point
+  between the two drew it as a run of hooks, since the earlier line carries its own GPS
+  jitter. Where the two leave the course it eases from the one to the other while the earlier
+  one eases back to its road, and an out-and-back earlier reference is followed on the side
+  heading this one's way, or the later line zigzags between its two lanes.
+  `reference.beside: false` keeps the narrowed course with references along its edges.
 
 ### First, the 180° meridian
 
