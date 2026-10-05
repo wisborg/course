@@ -29,8 +29,10 @@ reported: a GPX has no distance, a planned route has no times, and neither is
 estimated.
 
 The places come from an osmbase store on this machine, filled by "osmbase
-fetch" and, for answers by containment, "osmbase boundaries". Nothing about the
-course is sent anywhere.`,
+fetch" and, for answers by containment, "osmbase boundaries". What the store
+lacks for a course is offered before it is fetched, and fetching it tells the
+host the area; otherwise nothing about the course is sent anywhere.`,
+	Version:       version(),
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
