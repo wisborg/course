@@ -112,6 +112,14 @@ type Map struct {
 	// in pixels on a map 1000 pixels across and scaled with it; or auto,
 	// for the 13 pixels they have always been at any size of picture.
 	LabelSize string `yaml:"label-size"`
+	// Terrain shades the shape of the ground under the map, from elevation
+	// kept beside the map's store; what the store lacks is offered before
+	// it is fetched, as the map is. Off unless asked for, because fetching
+	// it tells another host where the course is.
+	Terrain bool `yaml:"terrain"`
+	// Contours draws contour lines with the terrain, every fifth one
+	// labelled with its height. Nothing without Terrain.
+	Contours bool `yaml:"contours"`
 }
 
 // Legend is the legend saying what each line or colour is.
@@ -199,7 +207,7 @@ func Default() Style {
 		Height:     1000,
 		Units:      Units{System: "metric", Distance: "auto", Elevation: "auto", Speed: "auto", Pace: "auto", Temperature: "auto"},
 		Text:       Text{Size: 13},
-		Map:        Map{LabelSize: "auto"},
+		Map:        Map{LabelSize: "auto", Contours: true},
 		Legend:     Legend{Position: "auto"},
 		Markers:    Markers{Every: "auto"},
 		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto", TemperatureSource: "auto", Width: 3},
@@ -345,7 +353,7 @@ var (
 	groupKeys = map[string][]string{
 		"units":     {"system", "distance", "elevation", "speed", "pace", "temperature"},
 		"text":      {"size"},
-		"map":       {"label-size"},
+		"map":       {"label-size", "terrain", "contours"},
 		"legend":    {"position"},
 		"markers":   {"every"},
 		"colouring": {"by", "grade-cap", "power-source", "temperature-source", "width"},
@@ -649,6 +657,8 @@ var descriptions = map[string]string{
 	"text.size":                    "In pixels on a map 1000 pixels across; scaled with the map.",
 	"map":                          "The map under the course.",
 	"map.label-size":               "The size of the map's own names, streets and places, in pixels on a map\n1000 pixels across and scaled with it; or auto, for 13 pixels at any size.",
+	"map.terrain":                  "true: shade the shape of the ground under the map. The elevation is kept\nbeside osmbase's store, and what it lacks is offered before it is fetched,\nwhich tells Mapterhorn's host the area. --terrain is the same as setting it.",
+	"map.contours":                 "With terrain, draw contour lines, every fifth one labelled with its height;\nfalse for the shading alone. --contours is the same as setting it.",
 	"legend":                       "The legend saying what each line or colour is.",
 	"legend.position":              "top-left, top-right, bottom-left or bottom-right; auto for whichever covers\nleast of the course; none for no legend. --legend is the same as setting it.",
 	"markers":                      "The distance markers, on a course whose file recorded distance.",

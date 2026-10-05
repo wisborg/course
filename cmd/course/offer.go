@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/spf13/cobra"
+
+	"github.com/wisborg/course/mapstyle"
 	"github.com/wisborg/osmbase/acquire"
 	"github.com/wisborg/osmbase/fetch"
+	"github.com/wisborg/osmbase/render"
 	"github.com/wisborg/osmbase/slice"
+	"github.com/wisborg/osmbase/terrain"
 )
 
 // defaultArchive is where a store with no map yet is filled from: the public
@@ -124,4 +130,90 @@ func humanBytes(n int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
+}
+
+// defaultTerrainSource is where terrain is fetched from when --terrain-source
+// does not say: Mapterhorn's download host, which osmbase's own command
+// defaults to as well, so the terrain store shared by the two is filled from
+// one source. Named here rather than in the library, as defaultArchive is.
+const defaultTerrainSource = "https://download.mapterhorn.com"
+
+// terrainFor opens the terrain a map is shaded with, when the style asks for
+// it: from the store beside the map's, or --terrain-store, after offering
+// to fetch what the view lacks. It is nil when the style does not ask, and
+// when there is still none after the offer -- the map is then drawn
+// unshaded and the report says so, as a map with no basemap is drawn on a
+// blank ground rather than refused.
+func terrainFor(cmd *cobra.Command, st mapstyle.Style, mapRoot string, v render.View) (*terrain.Store, error) {
+	if !st.Map.Terrain {
+		if cmd.Flags().Changed("terrain-source") || cmd.Flags().Changed("terrain-store") {
+			return nil, fmt.Errorf("--terrain-source and --terrain-store say where terrain is, and --terrain is what draws it; add --terrain")
+		}
+		return nil, nil
+	}
+	root := mapOpts.terrainStore
+	if root == "" {
+		root = terrain.Root(mapRoot)
+	}
+	z, _, err := v.Zoom()
+	if err != nil {
+		return nil, err
+	}
+	if s, short := terrain.Measure(root, boundsOf(v), z); short {
+		offerTerrain(cmd.Context(), cmd.ErrOrStderr(), s, mapOpts.terrainSource, mapOpts.yes)
+	}
+	ts, err := terrain.Open(root)
+	if errors.Is(err, terrain.ErrNoTerrain) {
+		return nil, nil
+	}
+	return ts, err
+}
+
+// offerTerrain asks whether to fetch the terrain a map lacks, and fetches it
+// on a yes, on offerToFill's terms: measured from the disk, asked before
+// anything is requested -- the list of archives included -- and a no or a
+// failure only costs the shading.
+func offerTerrain(ctx context.Context, w io.Writer, s terrain.Shortfall, source string, yes bool) {
+	if s.Empty {
+		fmt.Fprintf(w, "course: %s holds no terrain yet, to shade the map with.\n", s.Root)
+	} else {
+		fmt.Fprintf(w, "course: %s holds %d of the %d terrain tiles at zoom %d this map needs.\n", s.Root, s.Held, s.Wanted, s.Zoom)
+	}
+	if strings.Contains(source, "://") {
+		fmt.Fprintf(w, "course: fetching them contacts %s, which learns which part of the map\n", hostOf(source))
+		fmt.Fprintf(w, "course:   -- where this course went -- you asked about. Afterwards, nothing does.\n")
+	} else {
+		fmt.Fprintf(w, "course: they would be copied from %s, contacting nobody.\n", source)
+	}
+	switch (fetch.Consent{Yes: yes, Answerable: stdinAnswerable}).Ask(w, "Fetch the terrain now? [y/N] ") {
+	case fetch.Accepted:
+	case fetch.Unattended:
+		fmt.Fprintf(w, "course: nothing is attached to answer, so no terrain was fetched; pass --yes to fetch without asking\n")
+		return
+	case fetch.NoAnswer:
+		fmt.Fprintf(w, "\ncourse: no answer, so no terrain was fetched\n")
+		return
+	default:
+		fmt.Fprintf(w, "course: no terrain fetched\n")
+		return
+	}
+	l, err := terrain.Locate(ctx, source, func(index string) {
+		fmt.Fprintf(w, "course: reading the list of terrain archives at %s\n", index)
+	})
+	if err == nil {
+		var res terrain.Result
+		res, err = terrain.Fill(ctx, l, s.Root, s.Bounds, s.MapZoom(),
+			func(src string) (*fetch.Archive, error) { return fetch.Open(src, fetch.Options{}) },
+			func(p *terrain.Plan) {
+				if t := p.Totals(); !p.Empty() {
+					fmt.Fprintf(w, "course: %d terrain tiles, %s to download\n", t.Tiles, humanBytes(t.Transfer))
+				}
+			}, nil)
+		if err == nil && res.Written > 0 {
+			fmt.Fprintf(w, "course: fetched %d terrain tiles, %s\n", res.Written, humanBytes(res.Transfer))
+		}
+	}
+	if err != nil {
+		fmt.Fprintf(w, "course: %v\ncourse: carrying on with what the terrain store holds\n", err)
+	}
 }

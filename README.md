@@ -59,6 +59,19 @@ so many kilometres -- or miles, see [Units](#units) -- where the file recorded d
 for -- a tunnel, a flight over an ocean -- is dashed, because the straight line across it is
 not where the course went. The picture carries the map data's credit in its corner.
 
+```
+./course map --terrain hike.fit      # the hills shaded, with contour lines
+```
+
+`--terrain` (or `map.terrain: true` in a style) shades the shape of the ground under the map
+and draws contour lines, every fifth one labelled with its height; `--contours=false` keeps
+the shading and leaves the lines out. The elevation comes from
+[Mapterhorn](https://mapterhorn.com) and is kept beside the map's store, where `osmbase`
+finds it too; what the view lacks is offered before it is fetched, like the map. The
+picture's credit then names the elevation briefly, and the report prints its full notice --
+for Copernicus GLO-30, a sentence its licence dictates -- which **whoever publishes the
+picture must give with it**, in a caption or a description. See [NOTICE](NOTICE).
+
 The course is drawn thin and translucent, without a halo, so the streets, paths and names
 under it show through. Where a reference is drawn whole beside it (see below), the lines are
 drawn opaque instead, with a slim halo: two translucent lines over one another mix into a
@@ -390,7 +403,8 @@ that draw the same activities.
 Both commands check the store before they read it, and offer to fetch what is missing --
 which tells the archive's host where the course went, so it is never done without a yes,
 typed or given with `--yes`, and never asked where nobody can answer. The map fetches its
-view. The summary fetches only what its depth needs: the whole of a local course at street
+view, and with `--terrain` the view's elevation from Mapterhorn's host, asked about
+separately since it is a second host. The summary fetches only what its depth needs: the whole of a local course at street
 detail, and for a flight or a long drive just a few kilometres round each end, where the
 airports are; the rest is named from country and sea outlines. Declined, both carry on
 with what the store holds, and say what that cost.

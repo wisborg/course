@@ -105,6 +105,12 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	if cmd.Flags().Changed("legend") {
 		st.Legend.Position = mapOpts.legend
 	}
+	if cmd.Flags().Changed("terrain") {
+		st.Map.Terrain = mapOpts.terrain
+	}
+	if cmd.Flags().Changed("contours") {
+		st.Map.Contours = mapOpts.contours
+	}
 	if cmd.Flags().Changed("colour") {
 		st.Colouring.By = mapOpts.colour
 	}

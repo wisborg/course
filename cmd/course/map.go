@@ -22,6 +22,7 @@ import (
 	"github.com/wisborg/osmbase/fetch"
 	"github.com/wisborg/osmbase/render"
 	"github.com/wisborg/osmbase/slice"
+	"github.com/wisborg/osmbase/terrain"
 
 	"github.com/wisborg/course"
 	"github.com/wisborg/course/compare"
@@ -49,6 +50,10 @@ var mapOpts struct {
 	legend        string
 	titles        []string
 	separate      bool
+	terrain       bool
+	contours      bool
+	terrainSource string
+	terrainStore  string
 }
 
 var mapCmd = &cobra.Command{
@@ -71,8 +76,15 @@ of a few common system fonts, that has them. Scripts whose letters join, like
 Arabic and Devanagari, come out in real letters but not always joined
 properly; --lang en writes names in English wherever the map has them.
 
+--terrain shades the shape of the ground under the map and draws contour
+lines, every fifth one labelled with its height; --contours=false leaves the
+lines out. The elevation is kept beside the store, and what it lacks for the
+view is offered before it is fetched, which tells Mapterhorn's host the area.
+
 The picture carries the map data's credit in its corner, which is what the
-data's licence asks of anything drawn from it.`,
+data's licence asks of anything drawn from it. With terrain, the elevation's
+credit is there too, briefly, and the report prints its full notice, to be
+given wherever the picture is published.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runMap,
 }
@@ -100,6 +112,10 @@ func init() {
 	f.BoolVar(&mapOpts.whole, "whole-references", false, "draw every reference whole, even where the course followed it (default: a reference the course followed is drawn only where the two part)")
 	f.StringVar(&mapOpts.greatCircle, "great-circle", "", "draw the great circle, dashed -- the shortest way over the globe -- between the course's start and finish (overall, as plain --great-circle does), each file's (--great-circle=each), or both (--great-circle=both)")
 	f.Lookup("great-circle").NoOptDefVal = "overall"
+	mapCmd.PersistentFlags().BoolVar(&mapOpts.terrain, "terrain", false, "shade the shape of the ground under the map, and draw contour lines; what the terrain store lacks is offered before it is fetched; the same as --set map.terrain=..., and before any --set")
+	mapCmd.PersistentFlags().BoolVar(&mapOpts.contours, "contours", true, "with --terrain, draw contour lines; --contours=false for the shading alone; the same as --set map.contours=..., and before any --set")
+	f.StringVar(&mapOpts.terrainSource, "terrain-source", defaultTerrainSource, "with --terrain, where terrain the store lacks is fetched from, after asking: a host's address, or a directory of its archives")
+	f.StringVar(&mapOpts.terrainStore, "terrain-store", "", "with --terrain, where the terrain is kept (default: beside the map's store, its name ending -terrain)")
 	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
 }
@@ -215,9 +231,18 @@ func runMap(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
+	ts, err := terrainFor(cmd, st, root, view)
+	if err != nil {
+		return err
+	}
+	if st.Map.Terrain && !st.Map.Contours {
+		// Not drawn rather than drawn in no colour: the palette still has
+		// one, and this map chooses to leave the lines out.
+		palette.Omitted |= render.Roles(render.RoleContour)
+	}
 
 	scale := float64(max(view.Width, view.Height)) / 1000
-	img, res, err := basemap(cmd, src, manifest, view, palette, mapLabelSize(st, scale))
+	img, res, err := basemap(cmd, src, manifest, ts, view, palette, mapLabelSize(st, scale))
 	if err != nil {
 		return err
 	}
@@ -285,7 +310,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 			legend = append(legend, entry{name: name, ink: look.refInks[i], pattern: look.refLooks[i].Pattern})
 		}
 		size, margin := legendSize(legend, face, scale), metricsFor(face, scale).pad
-		credit := creditSpace(manifest.Attribution, face, margin)
+		credit := creditSpace(creditOf(manifest, res), face, margin)
 		corner := position
 		if corner == "auto" {
 			// What the legend would hide: the course, its markers and
@@ -298,11 +323,11 @@ func runMap(cmd *cobra.Command, args []string) error {
 		}
 		drawLegend(img, legend, face, scale, legendPlate(img.Bounds(), size, corner, margin, credit))
 	}
-	render.DrawCredit(img, manifest.Attribution, face)
+	render.DrawCredit(img, creditOf(manifest, res), face)
 	if err := writePNG(out, img); err != nil {
 		return err
 	}
-	writeMapReport(cmd.OutOrStdout(), out, c, view, res, len(routemap.DistanceMarkersEvery(c, spacing)), spacing.Every < 0)
+	writeMapReport(cmd.OutOrStdout(), out, c, view, res, st.Map.Terrain, len(routemap.DistanceMarkersEvery(c, spacing)), spacing.Every < 0)
 	if col != nil {
 		fmt.Fprintln(cmd.OutOrStdout(), col.report)
 	}
@@ -616,7 +641,7 @@ func mapNeed(root string, m slice.Manifest, src *slice.Source, v render.View) (n
 // basemap is the map under the course. With no map to draw from, it is the
 // palette's background: a course over nothing is still a picture of the
 // course, and the report says there was no map.
-func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, v render.View, p render.Palette, labelSize float64) (*image.RGBA, *render.Result, error) {
+func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, ts *terrain.Store, v render.View, p render.Palette, labelSize float64) (*image.RGBA, *render.Result, error) {
 	blank := func() *image.RGBA {
 		img := image.NewRGBA(image.Rect(0, 0, v.Width, v.Height))
 		draw.Draw(img, img.Bounds(), image.NewUniform(p.Background), image.Point{}, draw.Src)
@@ -625,10 +650,22 @@ func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, v render.V
 	if src == nil {
 		return blank(), nil, nil
 	}
-	r, err := render.New(src, render.Options{
+	o := render.Options{
 		Style: render.BasemapStyle(), Palette: p, Attribution: m.Attribution, Language: mapOpts.language,
 		LabelFace: faceAt(labelSize), LabelFaceFor: func(s float64) font.Face { return faceAt(labelSize * s) },
-	})
+	}
+	if ts != nil {
+		z, _, err := v.Zoom()
+		if err != nil {
+			return nil, nil, err
+		}
+		short, full, err := ts.Credit(boundsOf(v), z)
+		if err != nil {
+			return nil, nil, err
+		}
+		o.Terrain, o.TerrainAttribution, o.TerrainNotice = ts.Heights(), short, full
+	}
+	r, err := render.New(src, o)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -660,7 +697,21 @@ func writePNG(path string, img image.Image) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, res *render.Result, markers int, noneAsked bool) {
+// creditOf is the credit the picture carries: what the render owed, the
+// terrain's included when there was terrain, or the store's own when there
+// was no map to render.
+func creditOf(m slice.Manifest, res *render.Result) string {
+	if res != nil {
+		return res.Attribution
+	}
+	return m.Attribution
+}
+
+func boundsOf(v render.View) slice.Bounds {
+	return slice.Bounds{West: v.Bounds.West, South: v.Bounds.South, East: v.Bounds.East, North: v.Bounds.North}
+}
+
+func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, res *render.Result, terrainAsked bool, markers int, noneAsked bool) {
 	fmt.Fprintf(w, "%-10s %s, %d by %d\n", "map", out, v.Width, v.Height)
 	if res == nil {
 		fmt.Fprintf(w, "%-10s none: the store holds nothing of this view, so the course is drawn on a blank ground\n", "basemap")
@@ -672,12 +723,28 @@ func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, re
 		fmt.Fprintln(w)
 	}
 	switch {
+	case res != nil && res.TerrainCovered > 0:
+		fmt.Fprintf(w, "%-10s %.0f%% of the map, from zoom %d", "terrain", 100*res.TerrainCovered, res.TerrainZoom)
+		if res.ContourInterval > 0 {
+			fmt.Fprintf(w, "; contours every %g m, labelled every %g m", res.ContourInterval, 5*res.ContourInterval)
+		}
+		fmt.Fprintln(w)
+	case terrainAsked && res != nil:
+		fmt.Fprintf(w, "%-10s none: the terrain store holds none of this view, so the ground is not shaded\n", "terrain")
+	}
+	switch {
 	case markers > 0:
 		fmt.Fprintf(w, "%-10s %d distance markers\n", "markers", markers)
 	case !measured(c):
 		fmt.Fprintf(w, "%-10s none: the file records no distance\n", "markers")
 	case noneAsked:
 		fmt.Fprintf(w, "%-10s none, as the style asks\n", "markers")
+	}
+	// The elevation's full notice, which the picture's own credit only
+	// points to: owed by whoever publishes the picture, so it is printed
+	// where they read it, as one line to copy into a caption.
+	if res != nil && res.TerrainNotice != "" {
+		fmt.Fprintf(w, "\nThe map credits its elevation briefly. Wherever you publish it, give this notice with it:\n%s\n", res.TerrainNotice)
 	}
 }
 
