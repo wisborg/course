@@ -20,6 +20,7 @@ import (
 
 	"github.com/wisborg/fitactivity/units"
 	"github.com/wisborg/osmbase/fetch"
+	"github.com/wisborg/osmbase/perspective"
 	"github.com/wisborg/osmbase/render"
 	"github.com/wisborg/osmbase/slice"
 	"github.com/wisborg/osmbase/terrain"
@@ -52,6 +53,8 @@ var mapOpts struct {
 	separate      bool
 	terrain       bool
 	contours      bool
+	threeD        bool
+	heading       string
 	terrainSource string
 	terrainStore  string
 }
@@ -81,6 +84,13 @@ lines, every fifth one labelled with its height; --contours=false leaves the
 lines out. The elevation is kept beside the store, and what it lacks for the
 view is offered before it is fetched, which tells Mapterhorn's host the area.
 
+--3d draws the map in perspective instead, from a camera in the sky looking
+over the course, the ground shaped by its heights: the course, its markers and
+references lie on the ground and follow it over hills. It needs the terrain,
+and offers it as --terrain does. The camera takes in the whole course; --heading
+says which way it looks, and the view settings of a style its pitch, lens and
+how much the hills are exaggerated.
+
 The picture carries the map data's credit in its corner, which is what the
 data's licence asks of anything drawn from it. With terrain, the elevation's
 credit is there too, briefly, and the report prints its full notice, to be
@@ -94,7 +104,7 @@ func init() {
 	f.StringVar(&mapOpts.out, "out", "", "the PNG to write (default: the course's name with .png, in this directory)")
 	mapCmd.PersistentFlags().IntVar(&mapOpts.width, "width", 1600, "the picture's width in pixels; the same as --set width=..., and before any --set")
 	mapCmd.PersistentFlags().IntVar(&mapOpts.height, "height", 1000, "the picture's height in pixels; the same as --set height=..., and before any --set")
-	mapCmd.PersistentFlags().StringVar(&mapOpts.palette, "palette", "light", "the map's colours: light or dark; the same as --set palette=..., and before any --set")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.palette, "palette", "light", "the map's colours: light, dark, or outdoors (greener woods and parks, for terrain and 3d); the same as --set palette=..., and before any --set")
 	f.StringVar(&mapOpts.store, "store", "", "the osmbase store to draw from (default: osmbase's own)")
 	f.StringVar(&mapOpts.archive, "archive", "", "which archive in the store, when it holds several")
 	f.BoolVar(&mapOpts.yes, "yes", false, "fetch what the store lacks without asking")
@@ -113,6 +123,8 @@ func init() {
 	f.StringVar(&mapOpts.greatCircle, "great-circle", "", "draw the great circle, dashed -- the shortest way over the globe -- between the course's start and finish (overall, as plain --great-circle does), each file's (--great-circle=each), or both (--great-circle=both)")
 	f.Lookup("great-circle").NoOptDefVal = "overall"
 	mapCmd.PersistentFlags().BoolVar(&mapOpts.terrain, "terrain", false, "shade the shape of the ground under the map, and draw contour lines; what the terrain store lacks is offered before it is fetched; the same as --set map.terrain=..., and before any --set")
+	mapCmd.PersistentFlags().BoolVar(&mapOpts.threeD, "3d", false, "draw the map in perspective from a camera in the sky, the ground shaped by its heights and the course lying over it; needs the terrain, and offers it as --terrain does; the same as --set view.mode=3d, and before any --set")
+	mapCmd.PersistentFlags().StringVar(&mapOpts.heading, "heading", "auto", "with --3d, the compass bearing the camera looks along, in degrees, 0 looking north; auto for the one that shows the course largest; the same as --set view.heading=..., and before any --set")
 	mapCmd.PersistentFlags().BoolVar(&mapOpts.contours, "contours", true, "with --terrain, draw contour lines; --contours=false for the shading alone; the same as --set map.contours=..., and before any --set")
 	f.StringVar(&mapOpts.terrainSource, "terrain-source", defaultTerrainSource, "with --terrain, where terrain the store lacks is fetched from, after asking: a host's address, or a directory of its archives")
 	f.StringVar(&mapOpts.terrainStore, "terrain-store", "", "with --terrain, where the terrain is kept (default: beside the map's store, its name ending -terrain)")
@@ -210,7 +222,26 @@ func runMap(cmd *cobra.Command, args []string) error {
 	}
 	refs = append(refs, gcs...)
 
-	view, cropped := render.Fit(extent(c, refs), st.Width, st.Height, maxMapZoom)
+	// Flat, the view fits the course. In 3d it is the ground the camera
+	// sees, out into the haze, as the map to drape over the terrain; the
+	// course is drawn into it as onto a flat map, so it lies on the ground.
+	threeD := st.View.Mode == "3d"
+	var (
+		cam     perspective.Camera
+		view    render.View
+		cropped bool
+	)
+	if threeD {
+		if cam, err = cameraFor(st.View, float64(st.Width)/float64(st.Height), framed(c, refs)); err != nil {
+			return err
+		}
+		view = cam.MapView(cam.MapBounds(float64(st.Width)/float64(st.Height)), st.Height, 0)
+		// The heights are what 3d is drawn from, and shading them as well
+		// is what makes their shape read in a still picture.
+		st.Map.Terrain = true
+	} else {
+		view, cropped = render.Fit(extent(c, refs), st.Width, st.Height, maxMapZoom)
+	}
 	errw := cmd.ErrOrStderr()
 	if cropped {
 		fmt.Fprintf(errw, "course: the course is wider than the map at this size; it is drawn cropped\n")
@@ -241,8 +272,14 @@ func runMap(cmd *cobra.Command, args []string) error {
 		palette.Omitted |= render.Roles(render.RoleContour)
 	}
 
+	// Everything drawn is scaled with the picture. In 3d the map is larger
+	// than the picture, about one of its pixels to one of the picture's
+	// where the camera looks, so it is the picture that sets the scale.
 	scale := float64(max(view.Width, view.Height)) / 1000
-	img, res, err := basemap(cmd, src, manifest, ts, view, palette, mapLabelSize(st, scale))
+	if threeD {
+		scale = float64(max(st.Width, st.Height)) / 1000
+	}
+	img, res, err := basemap(cmd, src, manifest, ts, view, palette, mapLabelSize(st, scale), threeD)
 	if err != nil {
 		return err
 	}
@@ -279,8 +316,34 @@ func runMap(cmd *cobra.Command, args []string) error {
 		drawing.Gradients = append(drawing.Gradients, col.gradients...)
 	}
 	drawing = routemap.WithReferences(drawing, refs, look.refInks, look.refLooks, inks.Halo, scale, view, routemap.FromCourse("", c).Points)
-	if err := render.Draw(img, view, drawing, face); err != nil {
+	// In 3d the lines are draped, so they follow the ground, but the
+	// markers stand upright on the picture: lying on the ground, a label in
+	// the distance or on a slope is squashed past reading.
+	draped := drawing
+	if threeD {
+		draped.Markers = nil
+	}
+	if err := render.Draw(img, view, draped, face); err != nil {
 		return err
+	}
+	var pic *perspective.Picture
+	if threeD {
+		var heights render.HeightSource = perspective.Level
+		if ts != nil {
+			heights = ts.Heights()
+		}
+		pic, err = perspective.Render(
+			perspective.Scene{Map: img, View: view, Heights: heights, Exaggeration: st.View.Exaggeration, Step: perspective.StepFor(view)},
+			cam, perspective.Options{Width: st.Width, Height: st.Height},
+		)
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			pic.DrawPlaceNames(res.PointLabels, palette)
+		}
+		pic.DrawMarkers(drawing.Markers, face)
+		img = pic.Image
 	}
 	// A legend is drawn when there is more than the course to tell apart,
 	// or when one was asked for by name or place; never with --legend none.
@@ -314,9 +377,12 @@ func runMap(cmd *cobra.Command, args []string) error {
 		corner := position
 		if corner == "auto" {
 			// What the legend would hide: the course, its markers and
-			// labels and references, drawn again on nothing.
+			// labels and references, drawn again on nothing -- or in 3d,
+			// where the course and references are seen.
 			bare := image.NewRGBA(img.Bounds())
-			if err := render.Draw(bare, view, drawing, face); err != nil {
+			if pic != nil {
+				seenOn(bare, pic, framed(c, refs), max(2, int(4*scale)))
+			} else if err := render.Draw(bare, view, drawing, face); err != nil {
 				return err
 			}
 			corner = quietestCorner(bare, size, margin, credit)
@@ -327,7 +393,11 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if err := writePNG(out, img); err != nil {
 		return err
 	}
-	writeMapReport(cmd.OutOrStdout(), out, c, view, res, st.Map.Terrain, len(routemap.DistanceMarkersEvery(c, spacing)), spacing.Every < 0)
+	var camera string
+	if threeD {
+		camera = cameraLine(cam, st.View, set)
+	}
+	writeMapReport(cmd.OutOrStdout(), out, c, img.Bounds().Size(), camera, res, st.Map.Terrain, len(routemap.DistanceMarkersEvery(c, spacing)), spacing.Every < 0)
 	if col != nil {
 		fmt.Fprintln(cmd.OutOrStdout(), col.report)
 	}
@@ -352,8 +422,10 @@ func paletteNamed(name string) (render.Palette, render.Overlay, error) {
 		return render.LightPalette(), render.LightOverlay(), nil
 	case "dark":
 		return render.DarkPalette(), render.DarkOverlay(), nil
+	case "outdoors":
+		return render.OutdoorsPalette(), render.OutdoorsOverlay(), nil
 	}
-	return render.Palette{}, render.Overlay{}, fmt.Errorf("--palette %q is not light or dark", name)
+	return render.Palette{}, render.Overlay{}, fmt.Errorf("--palette %q is not light, dark or outdoors", name)
 }
 
 // nameOf is a file's name without its directory or extension: what a course
@@ -641,7 +713,11 @@ func mapNeed(root string, m slice.Manifest, src *slice.Source, v render.View) (n
 // basemap is the map under the course. With no map to draw from, it is the
 // palette's background: a course over nothing is still a picture of the
 // course, and the report says there was no map.
-func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, ts *terrain.Store, v render.View, p render.Palette, labelSize float64) (*image.RGBA, *render.Result, error) {
+//
+// lift takes the names of places off the map into the result's PointLabels,
+// for a map to be draped, where a name lying on a slope is stretched across
+// it: they are stood upright on the picture instead.
+func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, ts *terrain.Store, v render.View, p render.Palette, labelSize float64, lift bool) (*image.RGBA, *render.Result, error) {
 	blank := func() *image.RGBA {
 		img := image.NewRGBA(image.Rect(0, 0, v.Width, v.Height))
 		draw.Draw(img, img.Bounds(), image.NewUniform(p.Background), image.Point{}, draw.Src)
@@ -653,6 +729,7 @@ func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, ts *terrai
 	o := render.Options{
 		Style: render.BasemapStyle(), Palette: p, Attribution: m.Attribution, Language: mapOpts.language,
 		LabelFace: faceAt(labelSize), LabelFaceFor: func(s float64) font.Face { return faceAt(labelSize * s) },
+		LiftPointLabels: lift,
 	}
 	if ts != nil {
 		z, _, err := v.Zoom()
@@ -711,8 +788,13 @@ func boundsOf(v render.View) slice.Bounds {
 	return slice.Bounds{West: v.Bounds.West, South: v.Bounds.South, East: v.Bounds.East, North: v.Bounds.North}
 }
 
-func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, res *render.Result, terrainAsked bool, markers int, noneAsked bool) {
-	fmt.Fprintf(w, "%-10s %s, %d by %d\n", "map", out, v.Width, v.Height)
+// camera is where a 3d map was seen from, as cameraLine says it; empty for
+// a flat one.
+func writeMapReport(w io.Writer, out string, c *course.Course, size image.Point, camera string, res *render.Result, terrainAsked bool, markers int, noneAsked bool) {
+	fmt.Fprintf(w, "%-10s %s, %d by %d\n", "map", out, size.X, size.Y)
+	if camera != "" {
+		fmt.Fprintf(w, "%-10s %s\n", "view", camera)
+	}
 	if res == nil {
 		fmt.Fprintf(w, "%-10s none: the store holds nothing of this view, so the course is drawn on a blank ground\n", "basemap")
 	} else {
@@ -729,6 +811,8 @@ func writeMapReport(w io.Writer, out string, c *course.Course, v render.View, re
 			fmt.Fprintf(w, "; contours every %g m, labelled every %g m", res.ContourInterval, 5*res.ContourInterval)
 		}
 		fmt.Fprintln(w)
+	case terrainAsked && res != nil && camera != "":
+		fmt.Fprintf(w, "%-10s none: the terrain store holds none of this view, so the ground is drawn level and not shaded\n", "terrain")
 	case terrainAsked && res != nil:
 		fmt.Fprintf(w, "%-10s none: the terrain store holds none of this view, so the ground is not shaded\n", "terrain")
 	}

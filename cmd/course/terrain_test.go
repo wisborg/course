@@ -140,3 +140,69 @@ func TestMapWithTerrain(t *testing.T) {
 		t.Errorf("terrain without asking for it:\n%s", stdout)
 	}
 }
+
+// --3d draws the picture in perspective at the size asked and says where it
+// was seen from. Without terrain -- nobody to say yes to fetching it -- the
+// ground is level, and said to be; with it, it is shaded and credited. The
+// heading is the one given, and a camera that could not see the course is
+// refused before anything is drawn.
+func TestMapIn3D(t *testing.T) {
+	defer func(f func() bool) { stdinAnswerable = f }(stdinAnswerable)
+	stdinAnswerable = func() bool { return false }
+	resetFlags(t, mapCmd)
+
+	dir := t.TempDir()
+	store, out, gpx := filepath.Join(dir, "store"), filepath.Join(dir, "run.png"), filepath.Join(dir, "run.gpx")
+	worldMap(t, store)
+	writeLine(t, gpx, 10, 20, 0.002, 50)
+	tdir := terrainDir(t)
+
+	run := func(args ...string) (string, string, error) {
+		t.Helper()
+		resetNow(mapCmd)
+		var stdout, stderr bytes.Buffer
+		root.SetOut(&stdout)
+		root.SetErr(&stderr)
+		root.SetArgs(append([]string{"map", "--store", store, "--out", out, "--width", "400", "--height", "300", "--terrain-source", tdir, gpx}, args...))
+		defer root.SetArgs(nil)
+		err := root.Execute()
+		return stdout.String(), stderr.String(), err
+	}
+	picture := func() image.Image {
+		t.Helper()
+		f, err := os.Open(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		img, err := png.Decode(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return img
+	}
+
+	stdout, stderr, err := run("--3d")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "view       3d, looking") || !strings.Contains(stdout, "drawn level") {
+		t.Errorf("3d without terrain:\n%s%s", stderr, stdout)
+	}
+	if b := picture().Bounds(); b.Dx() != 400 || b.Dy() != 300 {
+		t.Errorf("a 3d picture of %v, not the 400 by 300 asked for", b)
+	}
+
+	stdout, stderr, err = run("--3d", "--yes", "--heading", "90")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, stderr)
+	}
+	if !strings.Contains(stdout, "looking east (90°)") || !strings.Contains(stdout, "terrain    100% of the map") ||
+		!strings.Contains(stdout, "give this notice with it:\nElevation: ") {
+		t.Errorf("3d with terrain, heading 90:\n%s%s", stderr, stdout)
+	}
+
+	if _, _, err := run("--3d", "--set", "view.pitch=5"); err == nil || !strings.Contains(err.Error(), "view.pitch") {
+		t.Errorf("a pitch of 5° was not refused: %v", err)
+	}
+}

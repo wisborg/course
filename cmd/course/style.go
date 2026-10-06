@@ -111,6 +111,15 @@ func buildStyle(cmd *cobra.Command) (mapstyle.Style, error) {
 	if cmd.Flags().Changed("contours") {
 		st.Map.Contours = mapOpts.contours
 	}
+	if cmd.Flags().Changed("3d") {
+		st.View.Mode = "flat"
+		if mapOpts.threeD {
+			st.View.Mode = "3d"
+		}
+	}
+	if cmd.Flags().Changed("heading") {
+		st.View.Heading = mapOpts.heading
+	}
 	if cmd.Flags().Changed("colour") {
 		st.Colouring.By = mapOpts.colour
 	}

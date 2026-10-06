@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
 	"slices"
@@ -31,7 +32,7 @@ import (
 
 // Style is everything about a map's look that can be set.
 type Style struct {
-	// Palette is the map's: light or dark.
+	// Palette is the map's: light, dark or outdoors.
 	Palette string `yaml:"palette"`
 	// Width and Height are the picture's, in pixels. Everything drawn on
 	// it is scaled with it, so a style's line widths look the same at any
@@ -45,6 +46,8 @@ type Style struct {
 	Text Text `yaml:"text"`
 	// Map is the map under the course.
 	Map Map `yaml:"map"`
+	// View is where the map is seen from.
+	View View `yaml:"view"`
 	// Legend is the legend saying what each line or colour is.
 	Legend Legend `yaml:"legend"`
 	// Markers are the course's distance markers.
@@ -121,6 +124,27 @@ type Map struct {
 	// labelled with its height. Nothing without Terrain.
 	Contours bool `yaml:"contours"`
 }
+
+// View is where the map is seen from: straight above, as a map is, or in
+// perspective from a camera in the sky, the ground shaped by its heights.
+type View struct {
+	// Mode is one of ViewModes: flat, or 3d.
+	Mode string `yaml:"mode"`
+	// Heading is the compass bearing a 3d camera looks along, in degrees,
+	// 0 looking north; or auto, for the bearing that shows the course
+	// largest.
+	Heading string `yaml:"heading"`
+	// Pitch is how far below the horizontal a 3d camera looks, in degrees:
+	// 90 is straight down.
+	Pitch float64 `yaml:"pitch"`
+	// FOV is a 3d camera's vertical field of view, in degrees.
+	FOV float64 `yaml:"fov"`
+	// Exaggeration is how many times their height hills are drawn in 3d.
+	Exaggeration float64 `yaml:"exaggeration"`
+}
+
+// ViewModes are the values View.Mode takes.
+var ViewModes = []string{"flat", "3d"}
 
 // Legend is the legend saying what each line or colour is.
 type Legend struct {
@@ -208,6 +232,7 @@ func Default() Style {
 		Units:      Units{System: "metric", Distance: "auto", Elevation: "auto", Speed: "auto", Pace: "auto", Temperature: "auto"},
 		Text:       Text{Size: 13},
 		Map:        Map{LabelSize: "auto", Contours: true},
+		View:       View{Mode: "flat", Heading: "auto", Pitch: 35, FOV: 40, Exaggeration: 1},
 		Legend:     Legend{Position: "auto"},
 		Markers:    Markers{Every: "auto"},
 		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto", TemperatureSource: "auto", Width: 3},
@@ -220,7 +245,7 @@ func Default() Style {
 
 // Palettes, LineStyles are the values Palette and a line's Style take.
 var (
-	Palettes   = []string{"light", "dark"}
+	Palettes   = []string{"light", "dark", "outdoors"}
 	LineStyles = []string{"solid", "dashed", "dotted"}
 )
 
@@ -347,13 +372,14 @@ func (s *Style) Set(setting string) error {
 var bareColour = regexp.MustCompile(`(^|[\[,\s])(#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)\b`)
 
 var (
-	topKeys  = []string{"palette", "width", "height", "units", "text", "map", "legend", "markers", "colouring", "course", "activities", "reference", "references"}
+	topKeys  = []string{"palette", "width", "height", "units", "text", "map", "view", "legend", "markers", "colouring", "course", "activities", "reference", "references"}
 	lineKeys = []string{"colour", "colours", "width", "opacity", "style", "halo", "beside"}
 	// groupKeys are the settings of each group that is not a line.
 	groupKeys = map[string][]string{
 		"units":     {"system", "distance", "elevation", "speed", "pace", "temperature"},
 		"text":      {"size"},
 		"map":       {"label-size", "terrain", "contours"},
+		"view":      {"mode", "heading", "pitch", "fov", "exaggeration"},
 		"legend":    {"position"},
 		"markers":   {"every"},
 		"colouring": {"by", "grade-cap", "power-source", "temperature-source", "width"},
@@ -376,7 +402,7 @@ func checkPath(keys []string) error {
 			return fmt.Errorf("%s is one setting, not a group of them", keys[0])
 		}
 		return nil
-	case "units", "text", "map", "legend", "markers", "colouring":
+	case "units", "text", "map", "view", "legend", "markers", "colouring":
 		group := groupKeys[keys[0]]
 		if len(keys) > 2 || len(keys) == 2 && !slices.Contains(group, keys[1]) {
 			return fmt.Errorf("no such setting %q; %s has %s", strings.Join(keys[1:], "."), keys[0], strings.Join(group, ", "))
@@ -454,6 +480,25 @@ func (s Style) Validate() error {
 	}
 	if err := autoOrPositive("map.label-size", s.Map.LabelSize, "pixels on a map 1000 across"); err != nil {
 		return err
+	}
+	if !slices.Contains(ViewModes, s.View.Mode) {
+		return fmt.Errorf("view.mode: %q is not one; use %s", s.View.Mode, strings.Join(ViewModes, " or "))
+	}
+	if s.View.Heading != "auto" {
+		if h, err := strconv.ParseFloat(s.View.Heading, 64); err != nil || math.IsInf(h, 0) || math.IsNaN(h) {
+			return fmt.Errorf("view.heading: %q is not one; give a compass bearing in degrees, or auto", s.View.Heading)
+		}
+	}
+	// Level with the ground, the camera sees the course edge on; past
+	// straight down, it is looking back over its own shoulder.
+	if !(s.View.Pitch >= 10 && s.View.Pitch <= 90) {
+		return fmt.Errorf("view.pitch: %v is not one; give degrees below the horizontal, from 10 to 90", s.View.Pitch)
+	}
+	if !(s.View.FOV >= 10 && s.View.FOV <= 100) {
+		return fmt.Errorf("view.fov: %v is not one; give a field of view in degrees, from 10 to 100", s.View.FOV)
+	}
+	if !(s.View.Exaggeration > 0 && s.View.Exaggeration <= 10) {
+		return fmt.Errorf("view.exaggeration: %v is not one; give how many times their height hills are drawn, more than 0 and at most 10", s.View.Exaggeration)
 	}
 	if !slices.Contains(LegendPositions, s.Legend.Position) {
 		return fmt.Errorf("legend.position: %q is not one; use %s", s.Legend.Position, strings.Join(LegendPositions, ", "))
@@ -643,7 +688,7 @@ func comment(n *yaml.Node, path string, autos map[string]string) {
 }
 
 var descriptions = map[string]string{
-	"palette":                      "The map's colours: light or dark.",
+	"palette":                      "The map's colours: light, dark, or outdoors -- greener woods and parks,\nfor terrain and 3d.",
 	"width":                        "The picture's width in pixels. Everything on it is scaled with it, so\nthe line widths below look the same at any size.",
 	"height":                       "The picture's height in pixels.",
 	"units":                        "The units numbers are shown in. --units and --unit are the same as\nsetting these, for this and every other command.",
@@ -659,6 +704,12 @@ var descriptions = map[string]string{
 	"map.label-size":               "The size of the map's own names, streets and places, in pixels on a map\n1000 pixels across and scaled with it; or auto, for 13 pixels at any size.",
 	"map.terrain":                  "true: shade the shape of the ground under the map. The elevation is kept\nbeside osmbase's store, and what it lacks is offered before it is fetched,\nwhich tells Mapterhorn's host the area. --terrain is the same as setting it.",
 	"map.contours":                 "With terrain, draw contour lines, every fifth one labelled with its height;\nfalse for the shading alone. --contours is the same as setting it.",
+	"view":                         "Where the map is seen from.",
+	"view.mode":                    "flat, seen from straight above; or 3d, in perspective from a camera in the\nsky, the ground shaped by its heights and the course lying over it. 3d\nneeds the terrain's heights, and offers them as --terrain does, shading\nthe map too. --3d is the same as setting it.",
+	"view.heading":                 "With 3d, the compass bearing the camera looks along, in degrees, 0 looking\nnorth; auto for the one that shows the course largest. --heading is the\nsame as setting it.",
+	"view.pitch":                   "With 3d, how far below the horizontal the camera looks, in degrees, from\n10 to 90 (straight down).",
+	"view.fov":                     "With 3d, the camera's vertical field of view, in degrees; wider takes in\nmore and draws the ground near the camera larger than the distance.",
+	"view.exaggeration":            "With 3d, how many times their height hills are drawn; 1 is true to life.",
 	"legend":                       "The legend saying what each line or colour is.",
 	"legend.position":              "top-left, top-right, bottom-left or bottom-right; auto for whichever covers\nleast of the course; none for no legend. --legend is the same as setting it.",
 	"markers":                      "The distance markers, on a course whose file recorded distance.",

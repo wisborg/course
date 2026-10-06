@@ -72,6 +72,22 @@ picture's credit then names the elevation briefly, and the report prints its ful
 for Copernicus GLO-30, a sentence its licence dictates -- which **whoever publishes the
 picture must give with it**, in a caption or a description. See [NOTICE](NOTICE).
 
+```
+./course map --3d --palette outdoors hike.fit                 # the course over the hills, in perspective
+./course map --3d --heading 200 --set view.pitch=50 hike.fit  # looking south-south-west, more steeply
+```
+
+`--3d` (or `view.mode: 3d`) draws the map in perspective instead, from a camera in the sky,
+the ground shaped by its heights: the course, its colouring and its references lie on the
+ground and follow it over hills, and the start, finish, distance markers and the names of
+places stand upright where they are seen -- left out where a hill hides them. It needs the
+terrain, and offers it as `--terrain` does; without it the ground is drawn level, and the
+report says so. The camera takes in the whole course. `--heading` says which way it looks,
+0 north; `auto`, the default, takes whichever bearing shows the course largest, which lays a
+long course corner to corner. `view.pitch` (35° below the horizontal), `view.fov` (40°) and
+`view.exaggeration` (1, true to life) are the rest of the camera. The `outdoors` palette's
+greener woods and darker lines suit it best.
+
 The course is drawn thin and translucent, without a halo, so the streets, paths and names
 under it show through. Where a reference is drawn whole beside it (see below), the lines are
 drawn opaque instead, with a slim halo: two translucent lines over one another mix into a
@@ -105,7 +121,7 @@ comment, so it starts a theme from the defaults and, given `--style` with an old
 brings it up to the settings there are now.
 
 ```yaml
-palette: dark            # light or dark; --palette is the same as --set palette=...
+palette: dark            # light, dark or outdoors; --palette is the same as --set palette=...
 width: 1920              # the picture, in pixels; --width and --height are the same
 height: 1080             #   as --set width=... and --set height=...
 text:
@@ -113,6 +129,10 @@ text:
 map:
   label-size: auto       # the map's own names: auto is 13 pixels at any size, or a
                          #   size on a map 1000 across, scaled with the picture
+view:
+  mode: flat             # flat, or 3d; --3d is the same
+  heading: auto          # with 3d, degrees from north, or auto; --heading is the same
+  pitch: 35              # with 3d, degrees below the horizontal, 10 to 90
 legend:
   position: auto         # a corner, auto, or none; --legend is the same
 markers:
