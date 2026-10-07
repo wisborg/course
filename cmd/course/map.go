@@ -279,7 +279,11 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if threeD {
 		scale = float64(max(st.Width, st.Height)) / 1000
 	}
-	img, res, err := basemap(cmd, src, manifest, ts, view, palette, mapLabelSize(st, scale), threeD)
+	var facing *float64
+	if threeD {
+		facing = &cam.Heading
+	}
+	img, res, err := basemap(cmd, src, manifest, ts, view, palette, mapLabelSize(st, scale), facing)
 	if err != nil {
 		return err
 	}
@@ -714,10 +718,13 @@ func mapNeed(root string, m slice.Manifest, src *slice.Source, v render.View) (n
 // palette's background: a course over nothing is still a picture of the
 // course, and the report says there was no map.
 //
-// lift takes the names of places off the map into the result's PointLabels,
-// for a map to be draped, where a name lying on a slope is stretched across
-// it: they are stood upright on the picture instead.
-func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, ts *terrain.Store, v render.View, p render.Palette, labelSize float64, lift bool) (*image.RGBA, *render.Result, error) {
+// facing, for a map to be draped, is the camera's heading: the names of
+// places are taken off the map into the result's PointLabels, to be stood
+// upright on the picture -- lying on a slope they are stretched across it --
+// and the names along streets and contours, which stay on the ground, are
+// turned to read upright for the camera rather than for a north-up reader.
+// Nil for a flat map.
+func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, ts *terrain.Store, v render.View, p render.Palette, labelSize float64, facing *float64) (*image.RGBA, *render.Result, error) {
 	blank := func() *image.RGBA {
 		img := image.NewRGBA(image.Rect(0, 0, v.Width, v.Height))
 		draw.Draw(img, img.Bounds(), image.NewUniform(p.Background), image.Point{}, draw.Src)
@@ -729,7 +736,9 @@ func basemap(cmd *cobra.Command, src *slice.Source, m slice.Manifest, ts *terrai
 	o := render.Options{
 		Style: render.BasemapStyle(), Palette: p, Attribution: m.Attribution, Language: mapOpts.language,
 		LabelFace: faceAt(labelSize), LabelFaceFor: func(s float64) font.Face { return faceAt(labelSize * s) },
-		LiftPointLabels: lift,
+	}
+	if facing != nil {
+		o.LiftPointLabels, o.LabelsFacing = true, *facing
 	}
 	if ts != nil {
 		z, _, err := v.Zoom()

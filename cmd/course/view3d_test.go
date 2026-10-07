@@ -5,12 +5,13 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/wisborg/osmbase/perspective"
 	"github.com/wisborg/osmbase/render"
 
 	"github.com/wisborg/course/mapstyle"
 )
 
-// An auto heading is the bearing, of every headingStep, from which the camera
+// An auto heading is the bearing, of every perspective.HeadingStep, from which the camera
 // stands nearest to take the course in -- for a long straight course in a
 // wide picture that lays it corner to corner, the longest way across, and
 // never looks along it. A heading given is kept, turned into 0 to 360.
@@ -41,7 +42,7 @@ func TestCameraForChoosesTheHeadingThatShowsTheCourseLargest(t *testing.T) {
 				t.Errorf("%s: heading %g looks along the course", c.name, h)
 			}
 		}
-		for h := 0.0; h < 360; h += headingStep {
+		for h := 0.0; h < 360; h += perspective.HeadingStep {
 			v.Heading = strconv.FormatFloat(h, 'g', -1, 64)
 			other, err := cameraFor(v, aspect, c.pts)
 			if err != nil {

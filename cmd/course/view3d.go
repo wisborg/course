@@ -34,50 +34,21 @@ func framed(c *course.Course, refs []routemap.Reference) []render.Coord {
 	return pts
 }
 
-// headingStep is how finely an auto heading is chosen, in degrees: finer
-// shows no difference anybody would see, and each costs a framing.
-const headingStep = 15
-
 // cameraFor is the 3d camera that shows pts whole, in a picture of the given
 // aspect, at the style's pitch and lens: looking along the style's heading,
-// or with heading auto, along whichever shows them largest -- the camera
-// that can stand nearest -- which lays a long course across the picture
-// rather than away from the camera. Of two bearings that tie, the first
-// from north is taken, so the same course is always seen the same way.
+// or with heading auto, along whichever shows them largest -- osmbase's
+// perspective.Camera.BestHeading, the rule fitdash's 3d route uses too, so
+// the same course is seen the same way by both.
 func cameraFor(v mapstyle.View, aspect float64, pts []render.Coord) (perspective.Camera, error) {
 	base := perspective.Camera{Pitch: v.Pitch, FOV: v.FOV}
-	if v.Heading != "auto" {
-		h, err := strconv.ParseFloat(v.Heading, 64)
-		if err != nil {
-			return base, fmt.Errorf("view.heading: %w", err) // checked by the style
-		}
-		base.Heading = math.Mod(math.Mod(h, 360)+360, 360)
-		return base.Frame(pts, aspect)
+	if v.Heading == "auto" {
+		return base.BestHeading(pts, aspect)
 	}
-	// Chosen on a few hundred of the points, which frame as the whole
-	// does to well within the margin, and quickly.
-	sample := pts
-	if n := len(pts); n > 400 {
-		sample = make([]render.Coord, 0, 401)
-		for i := 0; i < n; i += n / 400 {
-			sample = append(sample, pts[i])
-		}
-		sample = append(sample, pts[n-1])
+	h, err := strconv.ParseFloat(v.Heading, 64)
+	if err != nil {
+		return base, fmt.Errorf("view.heading: %w", err) // checked by the style
 	}
-	best, bestHeading := math.Inf(1), 0.0
-	for h := 0.0; h < 360; h += headingStep {
-		base.Heading = h
-		cam, err := base.Frame(sample, aspect)
-		if err != nil {
-			return cam, err
-		}
-		// A thousandth nearer to count: the bearings opposite each other
-		// frame a course alike, and rounding should not decide between them.
-		if cam.Distance < best*0.999 {
-			best, bestHeading = cam.Distance, h
-		}
-	}
-	base.Heading = bestHeading
+	base.Heading = math.Mod(math.Mod(h, 360)+360, 360)
 	return base.Frame(pts, aspect)
 }
 
