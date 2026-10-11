@@ -38,7 +38,7 @@ func TestUnitsFor(t *testing.T) {
 		want   string
 	}{
 		{"nautical", nil, "--units: \"nautical\" is not a system of units; use metric or imperial"},
-		{"metric", []string{"distance=ft"}, "--unit distance=ft: \"ft\" is not a unit of distance; use km, mi, nmi"},
+		{"metric", []string{"distance=ft"}, "--unit distance=ft: \"ft\" is not a unit of distance; use km, mi, nm"},
 		{"metric", []string{"time=s"}, "not a quantity with units"},
 		{"metric", []string{"distance"}, "give a quantity and its unit"},
 	} {

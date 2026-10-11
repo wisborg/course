@@ -240,7 +240,7 @@ func TestUnitsAndTemperatureSource(t *testing.T) {
 		}
 	}
 	u, err := s.Units.Set()
-	if err != nil || u.Distance.Name != "nmi" || u.Elevation.Name != "ft" || u.Temperature.Name != "°C" || s.Colouring.TemperatureSource != "native" {
+	if err != nil || u.Distance.Name != "nm" || u.Elevation.Name != "ft" || u.Temperature.Name != "°C" || s.Colouring.TemperatureSource != "native" {
 		t.Errorf("after --set: %+v %v, source %q", u, err, s.Colouring.TemperatureSource)
 	}
 	for _, c := range []struct{ set, want string }{
