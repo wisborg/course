@@ -693,7 +693,7 @@ var descriptions = map[string]string{
 	"height":                       "The picture's height in pixels.",
 	"units":                        "The units numbers are shown in. --units and --unit are the same as\nsetting these, for this and every other command.",
 	"units.system":                 "metric or imperial.",
-	"units.distance":               "auto for the system's, or km, mi, nmi.",
+	"units.distance":               "auto for the system's, or km, mi, nm.",
 	"units.elevation":              "auto for the system's, or m, ft. Also short distances, such as how far\na run strayed from a course.",
 	"units.speed":                  "auto for the system's, or km/h, mph, kn, m/s.",
 	"units.pace":                   "auto for the system's, or min/km, min/mi.",

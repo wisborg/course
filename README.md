@@ -139,7 +139,7 @@ markers:
   every: auto            # distance units between distance markers, auto, or none
 units:                   # --units and --unit are the same; see Units
   system: metric         # metric or imperial
-  distance: auto         # km, mi or nmi, or auto for the system's
+  distance: auto         # km, mi or nm, or auto for the system's
   elevation: auto        # m or ft
   speed: auto            # km/h, mph, kn or m/s
   pace: auto             # min/km or min/mi
@@ -388,7 +388,7 @@ The design and what was measured on real courses are in
 
 ```
 ./course compare today.fit --reference rhodes --units imperial
-./course map flight.kml --units imperial --unit distance=nmi --unit speed=kn
+./course map flight.kml --units imperial --unit distance=nm --unit speed=kn
 ./course map ride.fit --colour speed --unit speed=m/s
 ```
 
@@ -400,7 +400,7 @@ knots. The units are the common ones for each:
 
 | quantity    | units                   |
 |-------------|-------------------------|
-| `distance`  | `km`, `mi`, `nmi`       |
+| `distance`  | `km`, `mi`, `nm`        |
 | `elevation` | `m`, `ft`               |
 | `speed`     | `km/h`, `mph`, `kn`, `m/s` |
 | `pace`      | `min/km`, `min/mi`      |
