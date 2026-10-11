@@ -239,6 +239,21 @@ func markerSpacing(st mapstyle.Style, u units.Set) routemap.Spacing {
 	return sp
 }
 
+// markerMarks is how st draws a course's markers, as routemap.Drawing takes
+// it.
+func markerMarks(st mapstyle.Style) routemap.Marks {
+	mk := routemap.Marks{Pins: st.Markers.Ends == "pin"}
+	switch st.Markers.Style {
+	case "disc":
+		mk.Distance = render.ShapeNumberDisc
+	case "pin":
+		mk.Distance = render.ShapeNumberPin
+	case "ring":
+		mk.Distance = render.ShapeNumberRing
+	}
+	return mk
+}
+
 // over is base with every setting o makes made.
 func over(base, o mapstyle.Line) mapstyle.Line {
 	if o.Width != nil {

@@ -75,7 +75,7 @@ func TestAGapIsDashed(t *testing.T) {
 		c.Points[i].Elapsed += 10 * time.Minute
 		c.Points[i].Lon += 0.01 // a kilometre on, ten minutes later
 	}
-	d := Drawing(c, view(c), Inks{}, testLook, Spacing{}, 1)
+	d := Drawing(c, view(c), Inks{}, testLook, Spacing{}, Marks{}, 1)
 	var solid, dashed int
 	for _, l := range d.Lines {
 		if len(l.Dash) > 0 {
@@ -92,7 +92,7 @@ func TestAGapIsDashed(t *testing.T) {
 	}
 
 	c.Timed = false
-	d = Drawing(c, view(c), Inks{}, testLook, Spacing{}, 1)
+	d = Drawing(c, view(c), Inks{}, testLook, Spacing{}, Marks{}, 1)
 	if len(d.Lines) != 1 || len(d.Lines[0].Dash) != 0 {
 		t.Errorf("a plan's line is %d lines, dashed %v", len(d.Lines), len(d.Lines) > 0 && len(d.Lines[0].Dash) > 0)
 	}
@@ -104,7 +104,7 @@ func TestAPauseInPlaceIsNotAGap(t *testing.T) {
 	for i := 20; i < len(c.Points); i++ {
 		c.Points[i].Elapsed += 10 * time.Minute
 	}
-	for _, l := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, 1).Lines {
+	for _, l := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, Marks{}, 1).Lines {
 		if len(l.Dash) > 0 {
 			t.Error("a pause in place was dashed as a gap")
 		}
@@ -116,7 +116,7 @@ func TestAPauseInPlaceIsNotAGap(t *testing.T) {
 func TestTheLineIsThinnedToThePicture(t *testing.T) {
 	c := line(5000, 0.000002, time.Second, false) // 1 m apart, 5 km
 	v := view(c)
-	d := Drawing(c, v, Inks{}, testLook, Spacing{}, 1)
+	d := Drawing(c, v, Inks{}, testLook, Spacing{}, Marks{}, 1)
 	if len(d.Lines) != 1 {
 		t.Fatalf("%d lines", len(d.Lines))
 	}
@@ -132,7 +132,7 @@ func TestALoopHasOneLabelAtItsEnds(t *testing.T) {
 	c := line(100, 0.0001, time.Second, false)
 	c.Points = append(c.Points, c.Points[0])
 	var labels []string
-	for _, m := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, 1).Markers {
+	for _, m := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, Marks{}, 1).Markers {
 		if m.Label != "" {
 			labels = append(labels, m.Label)
 		}
@@ -142,7 +142,7 @@ func TestALoopHasOneLabelAtItsEnds(t *testing.T) {
 	}
 	c = line(100, 0.0001, time.Second, false)
 	labels = nil
-	for _, m := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, 1).Markers {
+	for _, m := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, Marks{}, 1).Markers {
 		labels = append(labels, m.Label)
 	}
 	if len(labels) != 2 || labels[1] != "Start" || labels[0] != "Finish" {
@@ -157,7 +157,7 @@ func TestAGapIsLongForItsRecording(t *testing.T) {
 	for i := 20; i < len(c.Points); i++ {
 		c.Points[i].Elapsed += time.Minute // one report 90 s after the last
 	}
-	for _, l := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, 1).Lines {
+	for _, l := range Drawing(c, view(c), Inks{}, testLook, Spacing{}, Marks{}, 1).Lines {
 		if len(l.Dash) > 0 {
 			t.Error("ninety seconds in a thirty-second recording was drawn as a gap")
 		}
@@ -193,5 +193,45 @@ func TestDistanceMarkersInAUnit(t *testing.T) {
 	}
 	if got := DistanceMarkersEvery(c, Spacing{Every: -1, Unit: mile}); got != nil {
 		t.Errorf("none: %+v", got)
+	}
+}
+
+// With pins, the start and finish are a green and a red pin with no words,
+// still the last two markers, finish then start; a loop is one pin for both;
+// and a distance marker carries its number inside, as the style asks.
+func TestPinsAndNumberedMarkers(t *testing.T) {
+	c := line(2001, 0.0001, time.Second, true) // about 22 km with distance
+	mk := Marks{Pins: true, Distance: render.ShapeNumberDisc}
+	d := Drawing(c, view(c), Inks{}, testLook, Spacing{}, mk, 1)
+	n := len(d.Markers)
+	if n < 3 {
+		t.Fatalf("%d markers, want distance markers and the two ends", n)
+	}
+	finish, start := d.Markers[n-2], d.Markers[n-1]
+	if start.Shape != render.ShapeStartPin || finish.Shape != render.ShapeFinishPin || start.Label != "" || finish.Label != "" {
+		t.Errorf("ends %+v, %+v; want a start pin and a finish pin, unlabelled", start, finish)
+	}
+	if start.Radius <= 0 || finish.Radius <= 0 {
+		t.Errorf("ends drawn at %v and %v", start.Radius, finish.Radius)
+	}
+	for _, m := range d.Markers[:n-2] {
+		if m.Shape != render.ShapeNumberDisc || m.Text == "" || m.Label != "" {
+			t.Errorf("distance marker %+v; want its number inside a disc, and no label beside", m)
+		}
+	}
+
+	c.Points = append(c.Points, c.Points[0])
+	d = Drawing(c, view(c), Inks{}, testLook, Spacing{}, mk, 1)
+	n = len(d.Markers)
+	if d.Markers[n-1].Shape != render.ShapeStartFinishPin || d.Markers[n-2].Radius != 0 {
+		t.Errorf("a loop's ends %+v, %+v; want one pin for both and no finish drawn", d.Markers[n-2], d.Markers[n-1])
+	}
+
+	// The zero Marks draws what it always drew.
+	d = Drawing(c, view(c), Inks{}, testLook, Spacing{}, Marks{}, 1)
+	for _, m := range d.Markers {
+		if m.Shape != render.ShapeDot {
+			t.Errorf("with no marks asked for, a %d marker", m.Shape)
+		}
 	}
 }

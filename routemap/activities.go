@@ -51,7 +51,7 @@ func ActivityInks(p render.Palette, o render.Overlay) []color.RGBA {
 // So ends within a few pixels of each other are one dot, labelled with all
 // of them in order: "Finish 1 · Start and finish 2 · Start 3". It is the
 // start's ink if anything starts there, and the finish's otherwise.
-func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks []color.RGBA, looks []Look, sp Spacing, scale float64) render.Drawing {
+func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks []color.RGBA, looks []Look, sp Spacing, mk Marks, scale float64) render.Drawing {
 	if scale <= 0 {
 		scale = 1
 	}
@@ -69,7 +69,7 @@ func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks 
 		}
 		own := inks
 		own.Route = actInks[i%len(actInks)]
-		one := Drawing(a, v, own, looks[i%len(looks)], sp, scale)
+		one := Drawing(a, v, own, looks[i%len(looks)], sp, mk, scale)
 		d.Lines = append(d.Lines, one.Lines...)
 		// Drawing's last two markers are the finish and the start; the
 		// ends are drawn here instead, together.
@@ -94,10 +94,11 @@ func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks 
 			}
 		}
 		var parts []string
-		anyStart := false
+		anyStart, anyFinish := false, false
 		for k := 0; k < len(group); k++ {
 			e := group[k]
 			anyStart = anyStart || e.start
+			anyFinish = anyFinish || e.finish
 			// An activity's own start and finish together are one part.
 			if k+1 < len(group) && group[k+1].n == e.n {
 				parts = append(parts, fmt.Sprintf("Start and finish %d", e.n))
@@ -111,6 +112,19 @@ func ActivitiesDrawing(acts []*course.Course, v render.View, inks Inks, actInks 
 			parts = append(parts, fmt.Sprintf("%s %d", word, e.n))
 		}
 		m := render.Marker{At: ends[i].at, Ink: inks.Finish, Radius: dot, Halo: halo, HaloInk: inks.Halo, Label: strings.Join(parts, " · ")}
+		if mk.Pins {
+			// Pins, keeping their labels: with several activities the
+			// numbers say whose end it is, which no pin can.
+			m.Radius, m.Halo = endPin*dot, halo*0.75
+			switch {
+			case anyStart && anyFinish:
+				m.Shape = render.ShapeStartFinishPin
+			case anyStart:
+				m.Shape = render.ShapeStartPin
+			default:
+				m.Shape = render.ShapeFinishPin
+			}
+		}
 		if anyStart {
 			m.Ink = inks.Start
 			starts = append(starts, m)

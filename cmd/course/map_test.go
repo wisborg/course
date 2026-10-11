@@ -310,7 +310,9 @@ func TestMapDrawsAFollowedReferenceWhereItParts(t *testing.T) {
 		t.Helper()
 		resetNow(mapCmd)
 		// Large enough that a reference's edges show beside the course.
-		all := append([]string{"map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "1200", "--height", "900", "--reference", ref}, args...)
+		// The ends as dots: the finish pin is red, and this looks for a
+		// reference by its reddish pink.
+		all := append([]string{"map", "--store", filepath.Join(dir, "store"), "--out", out, "--width", "1200", "--height", "900", "--reference", ref, "--set", "markers.ends=dot"}, args...)
 		if o, err := run(t, append(all, run1)...); err != nil {
 			t.Fatalf("map %v: %v\n%s", args, err, o)
 		}

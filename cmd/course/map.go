@@ -293,9 +293,13 @@ func runMap(cmd *cobra.Command, args []string) error {
 	own := inks
 	own.Route = look.actInks[0]
 	spacing := markerSpacing(st, set)
-	drawing := routemap.Drawing(c, view, own, look.actLooks[0], spacing, scale)
+	marks := markerMarks(st)
+	drawing := routemap.Drawing(c, view, own, look.actLooks[0], spacing, marks, scale)
+	// The course's distance markers as drawn, its two ends being the last
+	// markers: one under a pin is left out, and not counted.
+	markersDrawn := len(drawing.Markers) - 2
 	if len(activities) > 1 {
-		drawing = routemap.ActivitiesDrawing(activities, view, inks, look.actInks, look.actLooks, spacing, scale)
+		drawing = routemap.ActivitiesDrawing(activities, view, inks, look.actInks, look.actLooks, spacing, marks, scale)
 	}
 	var col *colouring
 	switch {
@@ -401,7 +405,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if threeD {
 		camera = cameraLine(cam, st.View, set)
 	}
-	writeMapReport(cmd.OutOrStdout(), out, c, img.Bounds().Size(), camera, res, st.Map.Terrain, len(routemap.DistanceMarkersEvery(c, spacing)), spacing.Every < 0)
+	writeMapReport(cmd.OutOrStdout(), out, c, img.Bounds().Size(), camera, res, st.Map.Terrain, markersDrawn, spacing.Every < 0)
 	if col != nil {
 		fmt.Fprintln(cmd.OutOrStdout(), col.report)
 	}

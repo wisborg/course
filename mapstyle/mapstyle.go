@@ -154,12 +154,26 @@ type Legend struct {
 }
 
 // Markers are the course's distance markers, on a course whose file
-// recorded distance.
+// recorded distance, and how its start and finish are marked.
 type Markers struct {
 	// Every is the distance between them in the distance unit; auto for a
 	// distance that suits the course's length; none for no markers.
 	Every string `yaml:"every"`
+	// Style is one of MarkerStyles: what a distance marker is drawn as.
+	Style string `yaml:"style"`
+	// Ends is one of EndStyles: what the start and finish are drawn as.
+	Ends string `yaml:"ends"`
 }
+
+// MarkerStyles are what a distance marker may be drawn as: a disc with its
+// number inside, a small pin with it in its head, a white disc ringed in the
+// marker's colour, or a dot with the number beside it.
+var MarkerStyles = []string{"disc", "pin", "ring", "dot"}
+
+// EndStyles are what a course's start and finish may be drawn as: balloon
+// pins, a green one with a "play" triangle and a red one with a checkered
+// head, or dots with the words "Start" and "Finish" beside them.
+var EndStyles = []string{"pin", "dot"}
 
 // LegendPositions are where a legend may go.
 var LegendPositions = []string{"auto", "top-left", "top-right", "bottom-left", "bottom-right", "none"}
@@ -234,7 +248,7 @@ func Default() Style {
 		Map:        Map{LabelSize: "auto", Contours: true},
 		View:       View{Mode: "flat", Heading: "auto", Pitch: 35, FOV: 40, Exaggeration: 1},
 		Legend:     Legend{Position: "auto"},
-		Markers:    Markers{Every: "auto"},
+		Markers:    Markers{Every: "auto", Style: "disc", Ends: "pin"},
 		Colouring:  Colouring{By: "none", GradeCap: 15, PowerSource: "auto", TemperatureSource: "auto", Width: 3},
 		Course:     Line{Colour: "auto", Colours: []string{}, Width: ptr(3), Opacity: "auto", Style: "solid", Halo: "auto"},
 		Activities: []Line{},
@@ -381,7 +395,7 @@ var (
 		"map":       {"label-size", "terrain", "contours"},
 		"view":      {"mode", "heading", "pitch", "fov", "exaggeration"},
 		"legend":    {"position"},
-		"markers":   {"every"},
+		"markers":   {"every", "style", "ends"},
 		"colouring": {"by", "grade-cap", "power-source", "temperature-source", "width"},
 	}
 )
@@ -499,6 +513,12 @@ func (s Style) Validate() error {
 	}
 	if !(s.View.Exaggeration > 0 && s.View.Exaggeration <= 10) {
 		return fmt.Errorf("view.exaggeration: %v is not one; give how many times their height hills are drawn, more than 0 and at most 10", s.View.Exaggeration)
+	}
+	if !slices.Contains(MarkerStyles, s.Markers.Style) {
+		return fmt.Errorf("markers.style: %q is not one; use %s", s.Markers.Style, strings.Join(MarkerStyles, ", "))
+	}
+	if !slices.Contains(EndStyles, s.Markers.Ends) {
+		return fmt.Errorf("markers.ends: %q is not one; use %s", s.Markers.Ends, strings.Join(EndStyles, ", "))
 	}
 	if !slices.Contains(LegendPositions, s.Legend.Position) {
 		return fmt.Errorf("legend.position: %q is not one; use %s", s.Legend.Position, strings.Join(LegendPositions, ", "))
@@ -712,8 +732,10 @@ var descriptions = map[string]string{
 	"view.exaggeration":            "With 3d, how many times their height hills are drawn; 1 is true to life.",
 	"legend":                       "The legend saying what each line or colour is.",
 	"legend.position":              "top-left, top-right, bottom-left or bottom-right; auto for whichever covers\nleast of the course; none for no legend. --legend is the same as setting it.",
-	"markers":                      "The distance markers, on a course whose file recorded distance.",
+	"markers":                      "The distance markers, on a course whose file recorded distance, and the\nstart and finish.",
 	"markers.every":                "The distance between them, in the distance unit; auto for one that suits\nthe course's length; none for no markers.",
+	"markers.style":                "What a distance marker is: disc, the number in a disc; pin, in a small\npin; ring, in a white disc ringed in colour; dot, beside a dot.",
+	"markers.ends":                 "What the start and finish are: pin, a green pin with a play symbol and a\nred one with a checkered head; dot, dots with Start and Finish beside them.",
 	"colouring":                    "What the course's line is coloured by along it; --colour, --grade-cap,\n--power-source and --temperature-source are the same as setting these.",
 	"colouring.by":                 "none, or one of pace, speed, grade-adjusted-pace, elevation, grade,\nheart-rate, power, air-power, cadence, temperature, humidity.",
 	"colouring.grade-cap":          "With by: grade, the steepest grade the colours tell apart, in per cent\neither way; steeper takes the end colour.",

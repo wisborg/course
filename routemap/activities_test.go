@@ -50,7 +50,7 @@ func TestActivitiesDrawing(t *testing.T) {
 	acts := []*course.Course{first, second, loop}
 	inks := InksFor(render.LightPalette(), render.LightOverlay())
 	actInks := []color.RGBA{{R: 1, A: 0xff}, {G: 1, A: 0xff}}
-	d := ActivitiesDrawing(acts, viewOf(acts...), inks, actInks, []Look{{Width: 3, Opacity: 1}}, Spacing{}, 1)
+	d := ActivitiesDrawing(acts, viewOf(acts...), inks, actInks, []Look{{Width: 3, Opacity: 1}}, Spacing{}, Marks{}, 1)
 
 	seen := map[color.RGBA]bool{}
 	for _, l := range d.Lines {
@@ -114,5 +114,27 @@ func TestSpreadAlongAll(t *testing.T) {
 	}
 	if got, _, _ := SpreadAlongAll([]*course.Course{a}, [][]float64{va}, 0); got != 1 {
 		t.Errorf("one course's whole spread starts at %v, want 1", got)
+	}
+}
+
+// With pins, several activities' ends keep their numbered labels, and an end
+// where one activity finishes and the next starts is one pin for both.
+func TestActivitiesPins(t *testing.T) {
+	first := east(20, 201)
+	second := east(first.Points[200].Lon, 101)
+	acts := []*course.Course{first, second}
+	inks := InksFor(render.LightPalette(), render.LightOverlay())
+	d := ActivitiesDrawing(acts, viewOf(acts...), inks, []color.RGBA{{R: 1, A: 0xff}}, []Look{{Width: 3, Opacity: 1}}, Spacing{}, Marks{Pins: true}, 1)
+	shapes := map[string]render.MarkerShape{}
+	for _, m := range d.Markers {
+		if m.Label != "" {
+			shapes[m.Label] = m.Shape
+		}
+	}
+	want := map[string]render.MarkerShape{"Start 1": render.ShapeStartPin, "Finish 1 · Start 2": render.ShapeStartFinishPin, "Finish 2": render.ShapeFinishPin}
+	for label, shape := range want {
+		if got, ok := shapes[label]; !ok || got != shape {
+			t.Errorf("%q drawn as %d (found %v), want %d", label, got, ok, shape)
+		}
 	}
 }

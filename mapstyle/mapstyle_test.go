@@ -261,3 +261,33 @@ func TestUnitsAndTemperatureSource(t *testing.T) {
 		t.Errorf("the written style lacks the temperature settings: %v\n%s", err, b.String())
 	}
 }
+
+// The markers' styles are pins and discs unless a style says otherwise, and
+// a style that names something else is refused by its path.
+func TestMarkerStyles(t *testing.T) {
+	s := Default()
+	if s.Markers.Style != "disc" || s.Markers.Ends != "pin" {
+		t.Errorf("defaults %+v, want disc and pin", s.Markers)
+	}
+	for _, set := range []string{"markers.style=ring", "markers.ends=dot"} {
+		if err := s.Set(set); err != nil {
+			t.Fatalf("--set %s: %v", set, err)
+		}
+	}
+	if err := s.Validate(); err != nil || s.Markers.Style != "ring" || s.Markers.Ends != "dot" {
+		t.Errorf("after --set: %+v %v", s.Markers, err)
+	}
+	for _, c := range []struct{ set, want string }{
+		{"markers.style=star", `markers.style: "star" is not one; use disc, pin, ring, dot`},
+		{"markers.ends=flag", `markers.ends: "flag" is not one; use pin, dot`},
+	} {
+		s := Default()
+		err := s.Set(c.set)
+		if err == nil {
+			err = s.Validate()
+		}
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("--set %s: %v, want %q", c.set, err, c.want)
+		}
+	}
+}

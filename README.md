@@ -55,7 +55,11 @@ answer and writes into its JSON; see [NOTICE](NOTICE).
 ```
 
 `map` draws the course over the map: the route, its start and finish, and a marker every
-so many kilometres -- or miles, see [Units](#units) -- where the file recorded distance. A stretch the recording has no fixes
+so many kilometres -- or miles, see [Units](#units) -- where the file recorded distance. The
+start is a green pin with a "play" triangle and the finish a red pin with a checkered head
+(one pin, half of each, where a course ends where it started), and each distance marker is
+its number in a disc on the line; `markers.ends` and `markers.style` in the
+[style](#map-styles) choose other looks, the dots of earlier versions among them. A stretch the recording has no fixes
 for -- a tunnel, a flight over an ocean -- is dashed, because the straight line across it is
 not where the course went. The picture carries the map data's credit in its corner.
 
@@ -137,6 +141,8 @@ legend:
   position: auto         # a corner, auto, or none; --legend is the same
 markers:
   every: auto            # distance units between distance markers, auto, or none
+  style: disc            # the number in a disc, pin (a small pin), ring (a ringed disc), or dot
+  ends: pin              # start and finish as pins, or dot (dots labelled Start and Finish)
 units:                   # --units and --unit are the same; see Units
   system: metric         # metric or imperial
   distance: auto         # km, mi or nm, or auto for the system's
@@ -195,8 +201,8 @@ pieces, as fitdash merges them -- and drawn as one course, with a dashed gap whe
 recording has one. `--separate` draws each as its own activity instead: in its own colour,
 with its own distance markers and its own start and finish, numbered in the order the files
 were given, and a legend line for each, its file's name or one `--title` for each file in
-turn. Where one activity finishes and the next starts, the two are one dot labelled with both,
-"Finish 1 · Start 2". With `--colour`, the activities share one scale, so the same colour is
+turn. Where one activity finishes and the next starts, the two are one pin, half green and
+half red, labelled with both, "Finish 1 · Start 2". With `--colour`, the activities share one scale, so the same colour is
 the same pace, or grade, on each.
 
 ### The legend

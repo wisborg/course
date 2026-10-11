@@ -38,11 +38,35 @@ func sizes(scale float64) (line, halo, dot, small float64) {
 	return 4 * scale, 2 * scale, 6 * scale, 3.5 * scale
 }
 
+// Marks are how a course's markers are drawn. The zero value is the dots
+// they always were, each with its word or number beside it.
+type Marks struct {
+	// Pins draws the start and the finish as balloon pins, green with a
+	// "play" triangle and red with a checkered head, in place of dots and
+	// the words "Start" and "Finish": the pin says which end it is. A
+	// course that ends where it started has one pin for both.
+	Pins bool
+	// Distance is what a distance marker is drawn as: render.ShapeDot, the
+	// zero value, for a dot with its number beside it, or
+	// render.ShapeNumberDisc, ShapeNumberPin or ShapeNumberRing for the
+	// number inside the marker.
+	Distance render.MarkerShape
+}
+
+// endPin and numberSize are a pin's head and a numbered marker's least
+// radius, in dots: big enough for the symbol in a head to read, at a map's
+// own scale.
+const (
+	endPin     = 1.8
+	numberSize = 1.15
+)
+
 // Drawing is the course as lines and markers over a picture of v, its line
-// drawn in look and its distance markers placed as sp says. A gap in the recording is drawn as wide and as opaque, but
+// drawn in look, its distance markers placed as sp says and its markers drawn
+// as mk says. A gap in the recording is drawn as wide and as opaque, but
 // always dashed and in the gap's ink, so it is never taken for where the
 // course went.
-func Drawing(c *course.Course, v render.View, inks Inks, look Look, sp Spacing, scale float64) render.Drawing {
+func Drawing(c *course.Course, v render.View, inks Inks, look Look, sp Spacing, mk Marks, scale float64) render.Drawing {
 	if scale <= 0 {
 		scale = 1
 	}
@@ -61,21 +85,58 @@ func Drawing(c *course.Course, v render.View, inks Inks, look Look, sp Spacing, 
 		d.Lines = append(d.Lines, look.line(run.points, inks.Route, inks.Halo, scale))
 	}
 
-	for _, m := range DistanceMarkersEvery(c, sp) {
-		d.Markers = append(d.Markers, render.Marker{At: m.At, Ink: inks.Marker, Radius: small, Halo: halo, HaloInk: inks.Halo, Label: m.Label})
-	}
 	first, last := c.Points[0], c.Points[len(c.Points)-1]
+	ends := []render.Coord{{Lat: first.Lat, Lon: first.Lon}, {Lat: last.Lat, Lon: last.Lon}}
+	for _, m := range DistanceMarkersEvery(c, sp) {
+		// A pin is far bigger than a dot, and a distance marker a few
+		// hundred metres from an end -- the last kilometre before a finish
+		// three hundred metres on -- was drawn under it, its number hidden
+		// by the pin's head. It is left out: the pin marks that place.
+		if mk.Pins && (pixelDistance(v, m.At, ends[0]) < 1.5*endPin*dot || pixelDistance(v, m.At, ends[1]) < 1.5*endPin*dot) {
+			continue
+		}
+		d.Markers = append(d.Markers, distanceMarker(m, mk, inks, small, halo, dot))
+	}
 	start := render.Marker{At: render.Coord{Lat: first.Lat, Lon: first.Lon}, Ink: inks.Start, Radius: dot, Halo: halo, HaloInk: inks.Halo, Label: "Start"}
 	finish := render.Marker{At: render.Coord{Lat: last.Lat, Lon: last.Lon}, Ink: inks.Finish, Radius: dot, Halo: halo, HaloInk: inks.Halo, Label: "Finish"}
+	together := pixelDistance(v, start.At, finish.At) < 3*dot
+	if mk.Pins {
+		// The pin says which end it is, so the words go. A loop's two
+		// pins, one over the other, would hide one end; it gets one pin
+		// for both, and the finish none. The finish is still placed,
+		// with no size, so a caller can count on the last two markers
+		// being the finish and the start.
+		start.Shape, finish.Shape = render.ShapeStartPin, render.ShapeFinishPin
+		start.Radius, finish.Radius = endPin*dot, endPin*dot
+		start.Halo, finish.Halo = halo*0.75, halo*0.75
+		start.Label, finish.Label = "", ""
+		if together {
+			start.Shape, finish.Radius = render.ShapeStartFinishPin, 0
+		}
+		d.Markers = append(d.Markers, finish, start)
+		return d
+	}
 	// A loop ends where it started, and two labels on one dot are one label
 	// written over the other.
 	// The finish dot goes down first and without a label, so the start's
 	// dot is on top and carries both.
-	if pixelDistance(v, start.At, finish.At) < 3*dot {
+	if together {
 		finish.Label, start.Label = "", "Start and finish"
 	}
 	d.Markers = append(d.Markers, finish, start)
 	return d
+}
+
+// distanceMarker is the marker drawn for m, as mk says: a dot with the
+// number beside it, or a marker with the number inside.
+func distanceMarker(m Marker, mk Marks, inks Inks, small, halo, dot float64) render.Marker {
+	out := render.Marker{At: m.At, Ink: inks.Marker, Radius: small, Halo: halo, HaloInk: inks.Halo, Label: m.Label}
+	if mk.Distance == render.ShapeDot {
+		return out
+	}
+	out.Shape, out.Text, out.Label = mk.Distance, m.Label, ""
+	out.Radius, out.Halo = numberSize*dot, halo*0.6
+	return out
 }
 
 // run is a stretch of the line drawn one way: recorded, or a gap across

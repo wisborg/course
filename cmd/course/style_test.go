@@ -376,3 +376,22 @@ func TestMapDrawsTheNewSettings(t *testing.T) {
 		t.Errorf("legends at text 13 and 26: %v and %v", a, b)
 	}
 }
+
+// A style's markers are drawn as it names them.
+func TestMarkerMarks(t *testing.T) {
+	for _, c := range []struct {
+		style, ends string
+		want        routemap.Marks
+	}{
+		{"disc", "pin", routemap.Marks{Pins: true, Distance: render.ShapeNumberDisc}},
+		{"pin", "pin", routemap.Marks{Pins: true, Distance: render.ShapeNumberPin}},
+		{"ring", "dot", routemap.Marks{Distance: render.ShapeNumberRing}},
+		{"dot", "dot", routemap.Marks{}},
+	} {
+		st := mapstyle.Default()
+		st.Markers.Style, st.Markers.Ends = c.style, c.ends
+		if got := markerMarks(st); got != c.want {
+			t.Errorf("style %s, ends %s: %+v, want %+v", c.style, c.ends, got, c.want)
+		}
+	}
+}
