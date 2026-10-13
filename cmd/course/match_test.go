@@ -44,9 +44,22 @@ func TestMatchCommand(t *testing.T) {
 	}
 	resetNow(matchCmd)
 	out, err = run(t, "match", "--references", refs, "--format", "json", run1)
-	var ms []map[string]any
-	if err != nil || json.Unmarshal([]byte(out), &ms) != nil || len(ms) != 2 || ms[0]["coverage"] != 1.0 || ms[0]["reference"] != "First" || ms[0]["from_s"] == nil || ms[0]["stops"] == nil {
+	var report struct {
+		Chain   string           `json:"chain"`
+		Matches []map[string]any `json:"matches"`
+	}
+	ms := &report.Matches
+	if err != nil || json.Unmarshal([]byte(out), &report) != nil || len(*ms) != 2 || (*ms)[0]["coverage"] != 1.0 || (*ms)[0]["reference"] != "First" || (*ms)[0]["from_s"] == nil || (*ms)[0]["stops"] == nil {
 		t.Fatalf("match as JSON: %v\n%s", err, out)
+	}
+	if !strings.HasPrefix(report.Chain, "First → ") || !strings.Contains(report.Chain, "Second") {
+		t.Errorf("the JSON's chain %q, want First and then Second", report.Chain)
+	}
+	// YAML names its fields as JSON does: from_m, not the Go name lowered.
+	resetNow(matchCmd)
+	out, err = run(t, "match", "--references", refs, "--format", "yaml", run1)
+	if err != nil || !strings.HasPrefix(out, "chain: First") || !strings.Contains(out, "from_m:") || strings.Contains(out, "fromm:") {
+		t.Errorf("match as YAML: %v\n%s", err, out)
 	}
 	resetNow(matchCmd)
 	out, err = run(t, "match", "--references", refs, "--reference", "Second", run1)

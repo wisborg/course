@@ -79,35 +79,45 @@ func runMatch(cmd *cobra.Command, args []string) error {
 		writeMatches(cmd.OutOrStdout(), ms, routeLength(c), c.Timed, u)
 		return nil
 	}
-	return output.Document{Data: jsonMatches(ms, c.Timed), Table: matchTable(ms, c.Timed, u)}.Write(cmd.OutOrStdout(), matchOpts.format.Format)
+	data := jsonMatchReport{Chain: matchChain(ms, routeLength(c), u), Matches: jsonMatches(ms, c.Timed)}
+	return output.Document{Data: data, Table: matchTable(ms, c.Timed, u)}.Write(cmd.OutOrStdout(), matchOpts.format.Format)
+}
+
+// jsonMatchReport is a match as JSON and YAML write it: the one line of the
+// references followed, as the text's first line, and the matches. An
+// object rather than the list of matches alone, which is what it was
+// before the line, so the line has a field of its own.
+type jsonMatchReport struct {
+	Chain   string      `json:"chain" yaml:"chain"`
+	Matches []jsonMatch `json:"matches" yaml:"matches"`
 }
 
 type jsonStretch struct {
-	FromM     float64 `json:"from_m"`
-	ToM       float64 `json:"to_m"`
-	FarthestM float64 `json:"farthest_m"`
+	FromM     float64 `json:"from_m" yaml:"from_m"`
+	ToM       float64 `json:"to_m" yaml:"to_m"`
+	FarthestM float64 `json:"farthest_m" yaml:"farthest_m"`
 }
 
 type jsonMatch struct {
-	Reference  string        `json:"reference"`
-	FromM      float64       `json:"from_m"`
-	ToM        float64       `json:"to_m"`
-	FromS      *float64      `json:"from_s,omitempty"`
-	ToS        *float64      `json:"to_s,omitempty"`
-	Coverage   float64       `json:"coverage"`
-	MeanM      float64       `json:"mean_m"`
-	MedianM    float64       `json:"median_m"`
-	WorstM     float64       `json:"worst_m"`
-	Missed     []jsonStretch `json:"missed"`
-	Excursions []jsonStretch `json:"excursions"`
-	Stops      []jsonStop    `json:"stops"`
+	Reference  string        `json:"reference" yaml:"reference"`
+	FromM      float64       `json:"from_m" yaml:"from_m"`
+	ToM        float64       `json:"to_m" yaml:"to_m"`
+	FromS      *float64      `json:"from_s,omitempty" yaml:"from_s,omitempty"`
+	ToS        *float64      `json:"to_s,omitempty" yaml:"to_s,omitempty"`
+	Coverage   float64       `json:"coverage" yaml:"coverage"`
+	MeanM      float64       `json:"mean_m" yaml:"mean_m"`
+	MedianM    float64       `json:"median_m" yaml:"median_m"`
+	WorstM     float64       `json:"worst_m" yaml:"worst_m"`
+	Missed     []jsonStretch `json:"missed" yaml:"missed"`
+	Excursions []jsonStretch `json:"excursions" yaml:"excursions"`
+	Stops      []jsonStop    `json:"stops" yaml:"stops"`
 }
 
 type jsonStop struct {
-	AtM       float64 `json:"at_m"`
-	FromS     float64 `json:"from_s"`
-	DurationS float64 `json:"duration_s"`
-	OffM      float64 `json:"off_m"`
+	AtM       float64 `json:"at_m" yaml:"at_m"`
+	FromS     float64 `json:"from_s" yaml:"from_s"`
+	DurationS float64 `json:"duration_s" yaml:"duration_s"`
+	OffM      float64 `json:"off_m" yaml:"off_m"`
 }
 
 // jsonMatches are the matches as the other commands' JSON is written: names

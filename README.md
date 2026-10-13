@@ -372,6 +372,8 @@ with its count and a stretch no reference covers as an ellipsis with its length:
 2x James Park + Balmoral St Loop + Derby Rd Loop → 12x James Park Loop → … 1.00 km → 3x James Park Loop
 ```
 
+With `--format json` or `yaml` the line is the `chain` field, beside the `matches`.
+
 ```
 ./course match morning.fit
 ./course map morning.fit --reference auto
