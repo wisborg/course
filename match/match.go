@@ -12,6 +12,7 @@ package match
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"time"
 
@@ -180,13 +181,25 @@ func Find(activity *course.Course, refs []Reference, o Options) []Match {
 		if len(rs) < 2 || !overlaps(a, rs, o.Near) {
 			continue
 		}
+		// tried is used, plus the stretches this reference's own searches
+		// failed on: set aside for this reference only. A failed search
+		// marked the shared used, and took points from every reference
+		// after it -- a long reference's third search found the laps of a
+		// short loop it contains, covered too little of itself to match,
+		// and the loop's own search then found its laps gone.
+		tried := slices.Clone(used)
 		for len(out) < 50 {
-			m, ok := best(a, rs, used, o, activity.Timed, r.Course.Timed)
+			m, ok := best(a, rs, tried, o, activity.Timed, r.Course.Timed)
 			if !ok {
 				break
 			}
 			m.Reference = r.Name
 			out = append(out, m)
+			for i := range a {
+				if a[i].Along >= m.From && a[i].Along <= m.To {
+					used[i] = true
+				}
+			}
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].From < out[j].From })
@@ -196,7 +209,8 @@ func Find(activity *course.Course, refs []Reference, o Options) []Match {
 // best aligns the reference against the activity's unused points and
 // returns the best stretch, if it covers enough of the reference, marking
 // its points used either way it is found, so a failing search is not
-// repeated on the same stretch.
+// repeated on the same stretch. used is the caller's for this reference:
+// see Find for why a failure must not reach the other references.
 func best(a, r []Sample, used []bool, o Options, aTimed, rTimed bool) (Match, bool) {
 	from, to, mean, ok := align(a, r, used, o)
 	if !ok {

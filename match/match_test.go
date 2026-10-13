@@ -288,3 +288,25 @@ func TestStops(t *testing.T) {
 		t.Errorf("an untimed course has stops %+v", stops)
 	}
 }
+
+// A long reference that contains a short loop, run once, then the loop
+// alone three times: the long one is found once and the loop three times.
+// The long reference's search after its own match finds the loops -- part
+// of itself, too little of it to match -- and set them aside for every
+// reference, so the loop's own search found them gone.
+func TestAFailedSearchLeavesItsStretchToOtherReferences(t *testing.T) {
+	square := [][2]float64{{0, 0}, {100, 0}, {100, 100}, {0, 100}, {0, 0}}
+	big := append(append([][2]float64{}, square...), [2]float64{-1000, 0}, [2]float64{-1000, 8}, [2]float64{0, 8})
+	refs := []Reference{
+		{Name: "Big", Course: path(0, big...)},
+		{Name: "Loop", Course: path(0, square...)},
+	}
+	activity := join(path(0, big...), path(0, square...), path(0, square...), path(0, square...))
+	count := map[string]int{}
+	for _, m := range Find(activity, refs, Options{}) {
+		count[m.Reference]++
+	}
+	if count["Big"] != 1 || count["Loop"] != 3 {
+		t.Errorf("found %v; want Big once and Loop three times", count)
+	}
+}
