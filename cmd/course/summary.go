@@ -343,27 +343,27 @@ func clock(d time.Duration) string {
 }
 
 type jsonRow struct {
-	ElapsedS  *float64       `json:"elapsed_s,omitempty"`
-	DistanceM *float64       `json:"distance_m,omitempty"`
-	LengthM   *float64       `json:"length_m,omitempty"`
-	Latitude  float64        `json:"latitude"`
-	Longitude float64        `json:"longitude"`
-	Places    []locate.Match `json:"places"`
+	ElapsedS  *float64       `json:"elapsed_s,omitempty" yaml:"elapsed_s,omitempty"`
+	DistanceM *float64       `json:"distance_m,omitempty" yaml:"distance_m,omitempty"`
+	LengthM   *float64       `json:"length_m,omitempty" yaml:"length_m,omitempty"`
+	Latitude  float64        `json:"latitude" yaml:"latitude"`
+	Longitude float64        `json:"longitude" yaml:"longitude"`
+	Places    []locate.Match `json:"places" yaml:"places"`
 }
 
 type jsonDoc struct {
-	Sources   []string      `json:"sources"`
-	Sport     string        `json:"sport,omitempty"`
-	Depth     locate.Level  `json:"depth"`
-	Auto      bool          `json:"depth_auto"`
-	Prefix    string        `json:"prefix,omitempty"`
-	Departure *locate.Match `json:"departure,omitempty"`
-	Arrival   *locate.Match `json:"arrival,omitempty"`
-	OneLiner  string        `json:"one_liner"`
-	Rows      []jsonRow     `json:"rows"`
-	Finish    *jsonRow      `json:"finish,omitempty"`
-	Dropped   int           `json:"rogue_fixes_left_out"`
-	Credits   []string      `json:"credits"`
+	Sources   []string      `json:"sources" yaml:"sources"`
+	Sport     string        `json:"sport,omitempty" yaml:"sport,omitempty"`
+	Depth     locate.Level  `json:"depth" yaml:"depth"`
+	Auto      bool          `json:"depth_auto" yaml:"depth_auto"`
+	Prefix    string        `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	Departure *locate.Match `json:"departure,omitempty" yaml:"departure,omitempty"`
+	Arrival   *locate.Match `json:"arrival,omitempty" yaml:"arrival,omitempty"`
+	OneLiner  string        `json:"one_liner" yaml:"one_liner"`
+	Rows      []jsonRow     `json:"rows" yaml:"rows"`
+	Finish    *jsonRow      `json:"finish,omitempty" yaml:"finish,omitempty"`
+	Dropped   int           `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
+	Credits   []string      `json:"credits" yaml:"credits"`
 }
 
 // jsonSummary is the summary for JSON and YAML. A time or a distance the

@@ -171,25 +171,25 @@ func writeComparison(w io.Writer, name string, p *compare.Profile, splits []comp
 }
 
 type jsonSplit struct {
-	FromM float64 `json:"from_m"`
-	ToM   float64 `json:"to_m"`
-	RunS  float64 `json:"run_s"`
-	RefS  float64 `json:"reference_s"`
-	GapS  float64 `json:"gap_s"`
+	FromM float64 `json:"from_m" yaml:"from_m"`
+	ToM   float64 `json:"to_m" yaml:"to_m"`
+	RunS  float64 `json:"run_s" yaml:"run_s"`
+	RefS  float64 `json:"reference_s" yaml:"reference_s"`
+	GapS  float64 `json:"gap_s" yaml:"gap_s"`
 }
 
 type jsonComparisonDoc struct {
-	Reference string      `json:"reference"`
-	FromM     float64     `json:"from_m"`
-	ToM       float64     `json:"to_m"`
-	FromS     float64     `json:"from_s"`
-	ToS       float64     `json:"to_s"`
-	AlongM    float64     `json:"along_m"`
-	LengthM   float64     `json:"length_m"`
-	GapS      float64     `json:"gap_s"`
-	Splits    []jsonSplit `json:"splits"`
-	Stops     []jsonStop  `json:"stops"`
-	RefStops  []jsonStop  `json:"reference_stops"`
+	Reference string      `json:"reference" yaml:"reference"`
+	FromM     float64     `json:"from_m" yaml:"from_m"`
+	ToM       float64     `json:"to_m" yaml:"to_m"`
+	FromS     float64     `json:"from_s" yaml:"from_s"`
+	ToS       float64     `json:"to_s" yaml:"to_s"`
+	AlongM    float64     `json:"along_m" yaml:"along_m"`
+	LengthM   float64     `json:"length_m" yaml:"length_m"`
+	GapS      float64     `json:"gap_s" yaml:"gap_s"`
+	Splits    []jsonSplit `json:"splits" yaml:"splits"`
+	Stops     []jsonStop  `json:"stops" yaml:"stops"`
+	RefStops  []jsonStop  `json:"reference_stops" yaml:"reference_stops"`
 }
 
 // jsonComparison is the comparison as the other commands' JSON is written:
