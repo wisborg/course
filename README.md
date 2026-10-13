@@ -364,7 +364,13 @@ the runs beside it as they were.
 
 `match` finds where an activity followed stored references -- a parkrun inside a longer run,
 both parkruns of a morning, an official race course -- and how closely, with where it
-missed the course or left it; `map --reference auto` draws every reference it matched.
+missed the course or left it; `map --reference auto` draws every reference it matched. Its
+first line is the run told as the references it followed, in order, each run of repeats once
+with its count and a stretch no reference covers as an ellipsis with its length:
+
+```
+2x James Park + Balmoral St Loop + Derby Rd Loop → 12x James Park Loop → … 1.00 km → 3x James Park Loop
+```
 
 ```
 ./course match morning.fit

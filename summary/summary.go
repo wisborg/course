@@ -927,6 +927,12 @@ func (s *Summary) OneLiner() string {
 	return line
 }
 
+// Repeats writes each stretch of a chain repeated back to back once, with
+// how many times: "2x (A → B → C)" for a group, and "12x A" for one name.
+// course match writes its matched references with it, as the summary
+// writes its places.
+func Repeats(parts []string) []string { return loops(parts) }
+
 // loops writes a stretch of the chain repeated back to back once, with how
 // many times: a course run twice round the same block is the block, twice.
 //
@@ -934,12 +940,14 @@ func (s *Summary) OneLiner() string {
 // the chain, and of those the shortest: a loop of ten streets run twice is one
 // group rather than the shorter coincidences inside it, and a lap of two
 // places run four times is "4x" of the two rather than "2x" of the four. A
-// stretch of one name cannot repeat, since repeats are already left out.
+// summary's places never repeat one name back to back, since repeats are
+// already left out; a match's references do, a loop run twelve times, and
+// one name repeated is written without the parentheses a group takes.
 func loops(parts []string) []string {
 	var out []string
 	for i := 0; i < len(parts); {
 		bestK, bestN := 0, 1
-		for k := 2; k <= (len(parts)-i)/2; k++ {
+		for k := 1; k <= (len(parts)-i)/2; k++ {
 			n := 1
 			for i+(n+1)*k <= len(parts) && equal(parts[i:i+k], parts[i+n*k:i+(n+1)*k]) {
 				n++
@@ -953,7 +961,11 @@ func loops(parts []string) []string {
 			i++
 			continue
 		}
-		out = append(out, fmt.Sprintf("%dx (%s)", bestN, strings.Join(parts[i:i+bestK], " → ")))
+		if bestK == 1 {
+			out = append(out, fmt.Sprintf("%dx %s", bestN, parts[i]))
+		} else {
+			out = append(out, fmt.Sprintf("%dx (%s)", bestN, strings.Join(parts[i:i+bestK], " → ")))
+		}
 		i += bestN * bestK
 	}
 	return out

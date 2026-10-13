@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/wisborg/course"
 	"github.com/wisborg/course/match"
+	"github.com/wisborg/course/summary"
 )
 
 var matchOpts struct {
@@ -74,7 +76,7 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	}
 	ms := match.Find(c, refs, match.Options{Near: matchOpts.near})
 	if matchOpts.format.Format == output.Text {
-		writeMatches(cmd.OutOrStdout(), ms, c.Timed, u)
+		writeMatches(cmd.OutOrStdout(), ms, routeLength(c), c.Timed, u)
 		return nil
 	}
 	return output.Document{Data: jsonMatches(ms, c.Timed), Table: matchTable(ms, c.Timed, u)}.Write(cmd.OutOrStdout(), matchOpts.format.Format)
@@ -201,11 +203,12 @@ func matchTable(ms []match.Match, timed bool, u units.Set) *table.Table {
 
 // writeMatches is the matches for a person: the table, then under it each
 // match's detours, which a table has no room for.
-func writeMatches(w io.Writer, ms []match.Match, timed bool, u units.Set) {
+func writeMatches(w io.Writer, ms []match.Match, length float64, timed bool, u units.Set) {
 	if len(ms) == 0 {
 		fmt.Fprintln(w, "no reference matched")
 		return
 	}
+	fmt.Fprintf(w, "%s\n\n", matchChain(ms, length, u))
 	fmt.Fprint(w, matchTable(ms, timed, u).String())
 	for _, m := range ms {
 		if len(m.Missed) == 0 && len(m.Excursions) == 0 && len(m.Stops) == 0 {
@@ -223,4 +226,43 @@ func writeMatches(w io.Writer, ms []match.Match, timed bool, u units.Set) {
 			fmt.Fprintf(w, "  stopped at %s for %s, %s along the course, %s from it\n", clock(s.From), s.Duration.Round(time.Second), distance(s.At, u), short(s.Off, u))
 		}
 	}
+}
+
+// otherGap is the shortest stretch between matches, or before the first or
+// after the last, that the chain names as followed by no reference: the
+// matches of back-to-back laps sit a resampling step apart, and that is
+// not a stretch of anything else.
+const otherGap = 100.0
+
+// matchChain is the activity as the references it followed, in order, on
+// one line, each run of repeats once with its count -- "2x James Park +
+// Balmoral St Loop + Derby Rd Loop → 12x James Park Loop" -- and a stretch
+// no reference covers as an ellipsis with its length, "… 1.00 km". The
+// references are joined with an arrow, as the summary joins places, since
+// a reference's own name may have a "+" in it.
+func matchChain(ms []match.Match, length float64, u units.Set) string {
+	var parts []string
+	other := func(m float64) {
+		if m > otherGap {
+			parts = append(parts, "… "+distance(m, u))
+		}
+	}
+	at := 0.0
+	for _, m := range ms {
+		other(m.From - at)
+		parts = append(parts, m.Reference)
+		at = m.To
+	}
+	other(length - at)
+	return strings.Join(summary.Repeats(parts), " → ")
+}
+
+// routeLength is how far along its line the activity went, as the matches
+// measure it.
+func routeLength(c *course.Course) float64 {
+	s := match.Resample(c, match.Options{}.WithDefaults().Step)
+	if len(s) == 0 {
+		return 0
+	}
+	return s[len(s)-1].Along
 }

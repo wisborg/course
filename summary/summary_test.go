@@ -416,6 +416,11 @@ func TestLoopsAreWrittenOnce(t *testing.T) {
 		{"A B A C", "A → B → A → C"},
 		{"A B A B", "2x (A → B)"},
 		{"A", "A"},
+		// One name repeated -- a match's loop run again and again -- is
+		// written without parentheses, and a group still takes them.
+		{"A A A B", "3x A → B"},
+		{"S A A A A", "S → 4x A"},
+		{"A B A B A A", "2x (A → B) → 2x A"},
 	} {
 		if got := strings.Join(loops(strings.Fields(tc.in)), " → "); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.in, got, tc.want)

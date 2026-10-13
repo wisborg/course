@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/wisborg/fitactivity/units"
 
 	"github.com/wisborg/course/match"
 )
@@ -104,5 +105,33 @@ func TestBestMatch(t *testing.T) {
 	}
 	if _, ok := bestMatch(ms, "C"); ok {
 		t.Error("a match found for a reference never matched")
+	}
+}
+
+// The matched references on one line, in order, each run of repeats once
+// with its count, and a stretch no reference covers as an ellipsis with its
+// length -- but not the few metres between back-to-back laps.
+func TestMatchChain(t *testing.T) {
+	u, _ := units.Of(units.Metric)
+	m := func(name string, from, to float64) match.Match {
+		return match.Match{Reference: name, From: from, To: to}
+	}
+	for _, c := range []struct {
+		name   string
+		ms     []match.Match
+		length float64
+		want   string
+	}{
+		{"laps back to back", []match.Match{m("Big", 0, 2520), m("Big", 2530, 5040), m("Loop", 5050, 5450), m("Loop", 5460, 5890)}, 5890,
+			"2x Big → 2x Loop"},
+		{"a stretch of something else", []match.Match{m("Loop", 0, 400), m("Loop", 410, 800), m("Loop", 1800, 2200)}, 2200,
+			"2x Loop → … 1.00 km → Loop"},
+		{"before and after", []match.Match{m("Loop", 500, 900)}, 1500,
+			"… 0.50 km → Loop → … 0.60 km"},
+		{"nothing matched", nil, 3000, "… 3.00 km"},
+	} {
+		if got := matchChain(c.ms, c.length, u); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
 	}
 }

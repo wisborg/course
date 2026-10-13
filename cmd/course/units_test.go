@@ -210,7 +210,15 @@ func TestMatchDeviationsInFeet(t *testing.T) {
 	out, err := run(t, "match", "--units", "imperial", "--reference", ref, off)
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	f := strings.Fields(lines[len(lines)-1])
-	if err != nil || !strings.Contains(lines[0], "median ft") || len(f) < 2 || f[len(f)-2] != "33" || f[len(f)-1] != "33" {
+	// The table's header: under the one-line chain of references.
+	header := ""
+	for _, l := range lines {
+		if strings.Contains(l, "median") {
+			header = l
+			break
+		}
+	}
+	if err != nil || !strings.Contains(header, "median ft") || len(f) < 2 || f[len(f)-2] != "33" || f[len(f)-1] != "33" {
 		t.Errorf("10 m off in feet: %v\n%s", err, out)
 	}
 }
