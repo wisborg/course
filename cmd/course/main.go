@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/cobrakit/completion"
 	"github.com/wisborg/output"
 )
 
@@ -40,6 +41,10 @@ host the area; otherwise nothing about the course is sent anywhere.`,
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	// `course completion install` puts cobra's completion script where the
+	// shell reads it, as fitdash's and videofx's do; see cobrakit. Here,
+	// where every subcommand has been added by its file's init.
+	completion.AddInstall(root)
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "course: %v\n", err)
 		os.Exit(1)
