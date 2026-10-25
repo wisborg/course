@@ -140,6 +140,16 @@ func writeStrava(w io.Writer, c *course.Course, u units.Set) {
 		if len(effort) > 0 {
 			fmt.Fprintf(w, "effort    %s\n", strings.Join(effort, ", "))
 		}
+		var energy []string
+		if a.HasCalories {
+			energy = append(energy, fmt.Sprintf("%.0f kcal", a.Calories))
+		}
+		if a.HasKilojoules {
+			energy = append(energy, fmt.Sprintf("%.0f kJ of work", a.Kilojoules))
+		}
+		if len(energy) > 0 {
+			fmt.Fprintf(w, "energy    %s, by Strava's reckoning\n", strings.Join(energy, ", "))
+		}
 		if g := a.Gear; g != nil {
 			fmt.Fprintf(w, "gear      %s\n", gearLine(g, u))
 		}
@@ -228,6 +238,8 @@ type jsonStrava struct {
 	Trainer           bool          `json:"trainer" yaml:"trainer"`
 	Manual            bool          `json:"manual" yaml:"manual"`
 	PerceivedExertion *float64      `json:"perceived_exertion,omitempty" yaml:"perceived_exertion,omitempty"`
+	CaloriesKcal      *float64      `json:"calories_kcal,omitempty" yaml:"calories_kcal,omitempty"`
+	WorkKJ            *float64      `json:"work_kj,omitempty" yaml:"work_kj,omitempty"`
 	Gear              *jsonGear     `json:"gear,omitempty" yaml:"gear,omitempty"`
 	Segments          []jsonSegment `json:"segments" yaml:"segments"`
 }
@@ -248,6 +260,14 @@ func jsonStravaOf(c *course.Course) *jsonStrava {
 	if a.HasPerceivedExertion {
 		v := a.PerceivedExertion
 		j.PerceivedExertion = &v
+	}
+	if a.HasCalories {
+		v := a.Calories
+		j.CaloriesKcal = &v
+	}
+	if a.HasKilojoules {
+		v := a.Kilojoules
+		j.WorkKJ = &v
 	}
 	if g := a.Gear; g != nil {
 		j.Gear = &jsonGear{ID: g.ID, Name: g.Name, DistanceM: g.Distance, Brand: g.Brand, Model: g.Model, Description: g.Description, Retired: g.Retired}

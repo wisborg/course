@@ -131,7 +131,7 @@ gives it what only Strava has instead: the title of the activity that started wh
 what was written about it, and the segments it went through. The summary puts the title above
 its line; `--detailed` adds the activity's page; what it was marked as -- race, long run or
 workout, commute, on a trainer, entered by hand; how hard it was -- its Relative Effort and your
-perceived exertion; the gear it was done in or on, by name and the distance logged with it; the
+perceived exertion; Strava's reckoning of the energy spent and, with power, the work done; the gear it was done in or on, by name and the distance logged with it; the
 description; and the segments, each with when it was entered and how long it took. JSON and YAML
 carry all of it, Relative Effort as `relative_effort` (Strava's API calls it `suffer_score`).
 `--strava-gear` also asks for the gear's brand, model and description, a request more.

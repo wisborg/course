@@ -105,7 +105,7 @@ func TestWriteStrava(t *testing.T) {
 	start := time.Date(2026, 4, 2, 6, 0, 0, 0, time.UTC)
 	c := &course.Course{Start: start, Title: "Invented Run", Description: "Line one.\nLine two.",
 		Strava: &fitactivity.StravaActivity{ID: 1001, URL: "https://www.strava.com/activities/1001", Kudos: 2,
-			HasRelativeEffort: true, RelativeEffort: 8, WorkoutType: "race", Commute: true,
+			HasRelativeEffort: true, RelativeEffort: 8, WorkoutType: "race", Commute: true, HasCalories: true, Calories: 483.4,
 			Gear:     &fitactivity.StravaGear{ID: "g9", Name: "Daily Trainers", Brand: "Brand", Model: "Model 2", Distance: 812400},
 			Segments: []fitactivity.StravaSegment{{ID: 5, Name: "Invented Hill", Start: start.Add(90 * time.Second), End: start.Add(150 * time.Second)}}}}
 	var b strings.Builder
@@ -121,6 +121,7 @@ func TestWriteStrava(t *testing.T) {
 strava    https://www.strava.com/activities/1001
 marked    race, commute
 effort    Relative Effort 8
+energy    483 kcal, by Strava's reckoning
 gear      Daily Trainers (Brand Model 2), 812.40 km in all
 
   Line one.
@@ -138,7 +139,7 @@ Invented Hill  0:01:30  0:01:00
 	}
 	if !strings.Contains(string(j), `"start_s":90`) || !strings.Contains(string(j), `"elapsed_s":60`) || !strings.Contains(string(j), `"kudos":2`) ||
 		!strings.Contains(string(j), `"relative_effort":8`) || !strings.Contains(string(j), `"workout_type":"race"`) ||
-		!strings.Contains(string(j), `"commute":true`) || !strings.Contains(string(j), `"brand":"Brand"`) || strings.Contains(string(j), "perceived_exertion") {
+		!strings.Contains(string(j), `"commute":true`) || !strings.Contains(string(j), `"brand":"Brand"`) || !strings.Contains(string(j), `"calories_kcal":483.4`) || strings.Contains(string(j), "work_kj") || strings.Contains(string(j), "perceived_exertion") {
 		t.Errorf("json %s", j)
 	}
 }
