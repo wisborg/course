@@ -151,7 +151,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if err := loadFonts(mapOpts.fonts); err != nil {
 		return err
 	}
-	load := loader(cmd, mapOpts.strava)
+	load := loader(cmd, fromStrava{attach: mapOpts.strava})
 	c, err := course.ReadWith(load, args...)
 	if err != nil {
 		return err

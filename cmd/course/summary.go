@@ -32,6 +32,7 @@ var summaryOpts struct {
 	yes      bool
 	format   formatFlag
 	strava   bool
+	gear     bool
 }
 
 var summaryCmd = &cobra.Command{
@@ -79,6 +80,7 @@ func init() {
 	f.BoolVar(&summaryOpts.yes, "yes", false, "fetch the map the summary needs without asking")
 	f.Float64Var(&summaryOpts.gap, "suburb-gap", summary.DefaultSuburbGap, "at street depth, how long in metres a stretch on no named way must be to be named by its suburb when the streets either side are in the same one")
 	f.BoolVar(&summaryOpts.strava, "strava", false, "give a file Strava's title, description and segments, from your activity there that started when it did; see \"course strava\"")
+	f.BoolVar(&summaryOpts.gear, "strava-gear", false, "with a course from Strava, ask for its gear's brand, model and description too, shown with --detailed")
 	summaryOpts.format = formatFlag{Format: output.Text}
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
 	root.AddCommand(summaryCmd)
@@ -115,7 +117,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if !ok {
 		return fmt.Errorf("--prefix %q is not city, locality or none", summaryOpts.prefix)
 	}
-	c, err := course.ReadWith(loader(cmd, summaryOpts.strava), args...)
+	c, err := course.ReadWith(loader(cmd, fromStrava{attach: summaryOpts.strava, gear: summaryOpts.gear}), args...)
 	if err != nil {
 		return err
 	}
@@ -194,7 +196,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	}
 	if summaryOpts.format.Format == output.Text {
 		writeFlights(out, c, legs, u)
-		writeStrava(out, c)
+		writeStrava(out, c, u)
 		writeFooter(out, c, s, credits, u)
 	}
 	return nil

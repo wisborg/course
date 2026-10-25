@@ -8,6 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/wisborg/fitactivity/units"
+
 	"github.com/spf13/cobra"
 
 	"github.com/wisborg/cobrakit/strava"
@@ -40,15 +42,24 @@ func stravaID(source string) (int64, bool) {
 	return id, err == nil && id > 0
 }
 
+// fromStrava is what a command asks Strava for beyond strava: courses.
+type fromStrava struct {
+	// attach gives a file Strava's details -- title, description,
+	// segments -- from the activity that started when it did.
+	attach bool
+	// gear asks for the brand, model and description of the gear an
+	// activity was done in or on: a request more for each.
+	gear bool
+}
+
 // loader reads a command's courses: a file as fitactivity reads it, and
-// strava:ID from the athlete's own activities on Strava. With attach, a
-// file is also given Strava's details -- title, description, segments --
-// from the activity that started when it did.
+// strava:ID from the athlete's own activities on Strava, with what more o
+// asks for.
 //
-// Strava is asked only for a strava: source or with attach, and a client
+// Strava is asked only for a strava: source or with o.attach, and a client
 // opened only then, so a user with no Strava application set up never meets
 // one.
-func loader(cmd *cobra.Command, attach bool) course.Loader {
+func loader(cmd *cobra.Command, o fromStrava) course.Loader {
 	var client *fs.Client
 	open := func() (*fs.Client, error) {
 		if client != nil {
@@ -68,10 +79,13 @@ func loader(cmd *cobra.Command, attach bool) course.Loader {
 				return nil, err
 			}
 			t, err := c.Track(cmd.Context(), id)
+			if err == nil && o.gear {
+				err = c.AddGear(cmd.Context(), t)
+			}
 			return t, strava.Explain(cmd, err)
 		}
 		t, err := fitactivity.Read(source)
-		if err != nil || !attach {
+		if err != nil || !o.attach {
 			return t, err
 		}
 		c, err := open()
@@ -84,6 +98,10 @@ func loader(cmd *cobra.Command, attach bool) course.Loader {
 		}
 		if s == nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "course: no Strava activity of yours started when %s did\n", source)
+		} else if o.gear {
+			if err := c.AddGear(cmd.Context(), t); err != nil {
+				return nil, strava.Explain(cmd, err)
+			}
 		}
 		return t, nil
 	}
@@ -98,15 +116,32 @@ func writeTitle(w io.Writer, c *course.Course) {
 }
 
 // writeStrava writes, for --detailed, what Strava says about the activity
-// beyond its title: its page, what was written about it, and the segments
-// it went through, each with when it entered and how long it took.
-func writeStrava(w io.Writer, c *course.Course) {
+// beyond its title: its page; what it was marked as, how hard it was and
+// what it was done in; what was written about it; and the segments it went
+// through, each with when it entered and how long it took.
+func writeStrava(w io.Writer, c *course.Course, u units.Set) {
 	if c.Strava == nil && c.Description == "" {
 		return
 	}
 	fmt.Fprintln(w)
-	if c.Strava != nil {
-		fmt.Fprintf(w, "strava    %s\n", c.Strava.URL)
+	if a := c.Strava; a != nil {
+		fmt.Fprintf(w, "strava    %s\n", a.URL)
+		if kind := marked(a); kind != "" {
+			fmt.Fprintf(w, "marked    %s\n", kind)
+		}
+		var effort []string
+		if a.HasRelativeEffort {
+			effort = append(effort, fmt.Sprintf("Relative Effort %.0f", a.RelativeEffort))
+		}
+		if a.HasPerceivedExertion {
+			effort = append(effort, fmt.Sprintf("perceived exertion %g of 10", a.PerceivedExertion))
+		}
+		if len(effort) > 0 {
+			fmt.Fprintf(w, "effort    %s\n", strings.Join(effort, ", "))
+		}
+		if g := a.Gear; g != nil {
+			fmt.Fprintf(w, "gear      %s\n", gearLine(g, u))
+		}
 	}
 	if c.Description != "" {
 		fmt.Fprintln(w)
@@ -126,6 +161,43 @@ func writeStrava(w io.Writer, c *course.Course) {
 	tw.Flush()
 }
 
+// marked is what the activity was marked as: "race, commute".
+func marked(a *fitactivity.StravaActivity) string {
+	var kind []string
+	for _, k := range []struct {
+		name string
+		on   bool
+	}{{a.WorkoutType, a.WorkoutType != ""}, {"commute", a.Commute}, {"on a trainer", a.Trainer}, {"entered by hand", a.Manual}} {
+		if k.on {
+			kind = append(kind, k.name)
+		}
+	}
+	return strings.Join(kind, ", ")
+}
+
+// gearLine is a piece of gear as far as it is known: "Daily Trainers
+// (Brand Model 2), 812.40 km, retired".
+func gearLine(g *fitactivity.StravaGear, u units.Set) string {
+	name := g.Name
+	if name == "" {
+		name = g.ID
+	}
+	if bm := strings.TrimSpace(g.Brand + " " + g.Model); bm != "" && bm != name {
+		name += " (" + bm + ")"
+	}
+	parts := []string{name}
+	if g.Distance > 0 {
+		parts = append(parts, distance(g.Distance, u)+" in all")
+	}
+	if g.Retired {
+		parts = append(parts, "retired")
+	}
+	if g.Description != "" {
+		parts = append(parts, g.Description)
+	}
+	return strings.Join(parts, ", ")
+}
+
 type jsonSegment struct {
 	ID       int64   `json:"id" yaml:"id"`
 	Name     string  `json:"name" yaml:"name"`
@@ -133,13 +205,30 @@ type jsonSegment struct {
 	ElapsedS float64 `json:"elapsed_s" yaml:"elapsed_s"`
 }
 
+type jsonGear struct {
+	ID          string  `json:"id" yaml:"id"`
+	Name        string  `json:"name,omitempty" yaml:"name,omitempty"`
+	DistanceM   float64 `json:"distance_m,omitempty" yaml:"distance_m,omitempty"`
+	Brand       string  `json:"brand,omitempty" yaml:"brand,omitempty"`
+	Model       string  `json:"model,omitempty" yaml:"model,omitempty"`
+	Description string  `json:"description,omitempty" yaml:"description,omitempty"`
+	Retired     bool    `json:"retired" yaml:"retired"`
+}
+
 type jsonStrava struct {
-	ID       int64         `json:"id" yaml:"id"`
-	URL      string        `json:"url" yaml:"url"`
-	PhotoURL string        `json:"photo_url,omitempty" yaml:"photo_url,omitempty"`
-	Kudos    int           `json:"kudos" yaml:"kudos"`
-	Comments int           `json:"comments" yaml:"comments"`
-	Segments []jsonSegment `json:"segments" yaml:"segments"`
+	ID                int64         `json:"id" yaml:"id"`
+	URL               string        `json:"url" yaml:"url"`
+	PhotoURL          string        `json:"photo_url,omitempty" yaml:"photo_url,omitempty"`
+	Kudos             int           `json:"kudos" yaml:"kudos"`
+	Comments          int           `json:"comments" yaml:"comments"`
+	RelativeEffort    *float64      `json:"relative_effort,omitempty" yaml:"relative_effort,omitempty"`
+	WorkoutType       string        `json:"workout_type,omitempty" yaml:"workout_type,omitempty"`
+	Commute           bool          `json:"commute" yaml:"commute"`
+	Trainer           bool          `json:"trainer" yaml:"trainer"`
+	Manual            bool          `json:"manual" yaml:"manual"`
+	PerceivedExertion *float64      `json:"perceived_exertion,omitempty" yaml:"perceived_exertion,omitempty"`
+	Gear              *jsonGear     `json:"gear,omitempty" yaml:"gear,omitempty"`
+	Segments          []jsonSegment `json:"segments" yaml:"segments"`
 }
 
 // jsonStravaOf is the activity on Strava for JSON and YAML, each segment's
@@ -149,7 +238,19 @@ func jsonStravaOf(c *course.Course) *jsonStrava {
 	if a == nil {
 		return nil
 	}
-	j := &jsonStrava{ID: a.ID, URL: a.URL, PhotoURL: a.PhotoURL, Kudos: a.Kudos, Comments: a.Comments, Segments: []jsonSegment{}}
+	j := &jsonStrava{ID: a.ID, URL: a.URL, PhotoURL: a.PhotoURL, Kudos: a.Kudos, Comments: a.Comments, Segments: []jsonSegment{},
+		WorkoutType: a.WorkoutType, Commute: a.Commute, Trainer: a.Trainer, Manual: a.Manual}
+	if a.HasRelativeEffort {
+		v := a.RelativeEffort
+		j.RelativeEffort = &v
+	}
+	if a.HasPerceivedExertion {
+		v := a.PerceivedExertion
+		j.PerceivedExertion = &v
+	}
+	if g := a.Gear; g != nil {
+		j.Gear = &jsonGear{ID: g.ID, Name: g.Name, DistanceM: g.Distance, Brand: g.Brand, Model: g.Model, Description: g.Description, Retired: g.Retired}
+	}
 	for _, sg := range a.Segments {
 		j.Segments = append(j.Segments, jsonSegment{ID: sg.ID, Name: sg.Name,
 			StartS: sg.Start.Sub(c.Start).Seconds(), ElapsedS: sg.End.Sub(sg.Start).Seconds()})

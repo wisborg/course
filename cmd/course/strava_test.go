@@ -12,6 +12,7 @@ import (
 
 	"github.com/wisborg/fitactivity"
 	fs "github.com/wisborg/fitactivity/strava"
+	"github.com/wisborg/fitactivity/units"
 
 	"github.com/wisborg/course"
 )
@@ -72,7 +73,7 @@ func TestLoader_AStravaSourceFromTheAthletesOwnActivities(t *testing.T) {
 	loggedInAt(t)
 	cmd := &cobra.Command{Use: "summary"}
 	cmd.Flags().String("strava-config", "", "")
-	c, err := course.ReadWith(loader(cmd, false), "strava:1001")
+	c, err := course.ReadWith(loader(cmd, fromStrava{}), "strava:1001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +92,10 @@ func TestLoader_AFileAloneNeverAsksStrava(t *testing.T) {
 	writeLine(t, gpx, 10, 20, 0.0002, 10)
 	cmd := &cobra.Command{Use: "summary"}
 	cmd.Flags().String("strava-config", "", "")
-	if _, err := course.ReadWith(loader(cmd, false), gpx); err != nil {
+	if _, err := course.ReadWith(loader(cmd, fromStrava{}), gpx); err != nil {
 		t.Fatalf("a file without --strava: %v", err)
 	}
-	_, err := course.ReadWith(loader(cmd, true), gpx)
+	_, err := course.ReadWith(loader(cmd, fromStrava{attach: true}), gpx)
 	if err == nil || !strings.Contains(err.Error(), "no Strava API application") {
 		t.Errorf("--strava without an application: %v", err)
 	}
@@ -104,14 +105,23 @@ func TestWriteStrava(t *testing.T) {
 	start := time.Date(2026, 4, 2, 6, 0, 0, 0, time.UTC)
 	c := &course.Course{Start: start, Title: "Invented Run", Description: "Line one.\nLine two.",
 		Strava: &fitactivity.StravaActivity{ID: 1001, URL: "https://www.strava.com/activities/1001", Kudos: 2,
+			HasRelativeEffort: true, RelativeEffort: 8, WorkoutType: "race", Commute: true,
+			Gear:     &fitactivity.StravaGear{ID: "g9", Name: "Daily Trainers", Brand: "Brand", Model: "Model 2", Distance: 812400},
 			Segments: []fitactivity.StravaSegment{{ID: 5, Name: "Invented Hill", Start: start.Add(90 * time.Second), End: start.Add(150 * time.Second)}}}}
 	var b strings.Builder
 	writeTitle(&b, c)
-	writeStrava(&b, c)
+	u, err := units.Of(units.Metric)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStrava(&b, c, u)
 	want := `Invented Run
 
 
 strava    https://www.strava.com/activities/1001
+marked    race, commute
+effort    Relative Effort 8
+gear      Daily Trainers (Brand Model 2), 812.40 km in all
 
   Line one.
   Line two.
@@ -126,7 +136,9 @@ Invented Hill  0:01:30  0:01:00
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(j), `"start_s":90`) || !strings.Contains(string(j), `"elapsed_s":60`) || !strings.Contains(string(j), `"kudos":2`) {
+	if !strings.Contains(string(j), `"start_s":90`) || !strings.Contains(string(j), `"elapsed_s":60`) || !strings.Contains(string(j), `"kudos":2`) ||
+		!strings.Contains(string(j), `"relative_effort":8`) || !strings.Contains(string(j), `"workout_type":"race"`) ||
+		!strings.Contains(string(j), `"commute":true`) || !strings.Contains(string(j), `"brand":"Brand"`) || strings.Contains(string(j), "perceived_exertion") {
 		t.Errorf("json %s", j)
 	}
 }

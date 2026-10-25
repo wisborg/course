@@ -129,8 +129,12 @@ file is. What Strava keeps of the recording is less than the watch's file -- no 
 running dynamics or timer events -- so where you have the file, `--strava` on `summary` or `map`
 gives it what only Strava has instead: the title of the activity that started when the file did,
 what was written about it, and the segments it went through. The summary puts the title above
-its line; `--detailed` adds the activity's page, the description and the segments, each with
-when it was entered and how long it took, and JSON and YAML carry all of it. A map's legend
+its line; `--detailed` adds the activity's page; what it was marked as -- race, long run or
+workout, commute, on a trainer, entered by hand; how hard it was -- its Relative Effort and your
+perceived exertion; the gear it was done in or on, by name and the distance logged with it; the
+description; and the segments, each with when it was entered and how long it took. JSON and YAML
+carry all of it, Relative Effort as `relative_effort` (Strava's API calls it `suffer_score`).
+`--strava-gear` also asks for the gear's brand, model and description, a request more. A map's legend
 takes the title unless `--title` gives one.
 
 Nothing contacts Strava unless a command is given a `strava:` course or `--strava`, so a file

@@ -63,7 +63,7 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	c, err := course.ReadWith(loader(cmd, false), args...)
+	c, err := course.ReadWith(loader(cmd, fromStrava{}), args...)
 	if err != nil {
 		return err
 	}
