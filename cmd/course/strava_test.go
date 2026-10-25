@@ -150,3 +150,54 @@ func TestReferenceAdd_RefusesAStravaActivity(t *testing.T) {
 		t.Errorf("err %v", err)
 	}
 }
+
+func TestSummary_AnActivityWithoutPositionsIsWhatStravaSays(t *testing.T) {
+	loggedInAt(t)
+	dir := filepath.Join(os.Getenv("XDG_CACHE_HOME"), "fitactivity", "strava", "77")
+	ride := `{"id":1002,"name":"Invented Trainer Ride","sport_type":"VirtualRide","start_date":"2026-04-02T06:00:00Z",
+		"trainer":true,"suffer_score":12,"streams":[{"type":"time","data":[0,1,2]},{"type":"heartrate","data":[120,121,122]}]}`
+	if err := os.WriteFile(filepath.Join(dir, "1002.streams.json"), []byte(ride), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resetFlags(t, summaryCmd)
+	out, err := run(t, "summary", "--detailed", "strava:1002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Invented Trainer Ride", "no positions recorded", "marked    on a trainer", "Relative Effort 12"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary lacks %q:\n%s", want, out)
+		}
+	}
+	resetFlags(t, summaryCmd)
+	out, err = run(t, "summary", "--format", "json", "strava:1002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Title  string
+		Rows   []any
+		Strava struct {
+			Trainer        bool    `json:"trainer"`
+			RelativeEffort float64 `json:"relative_effort"`
+		}
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if doc.Title != "Invented Trainer Ride" || doc.Rows == nil || !doc.Strava.Trainer || doc.Strava.RelativeEffort != 12 {
+		t.Errorf("json %+v", doc)
+	}
+}
+
+func TestSummary_AFileWithoutPositionsAndWithoutStravaStillFails(t *testing.T) {
+	gpx := filepath.Join(t.TempDir(), "run.gpx")
+	if err := os.WriteFile(gpx, []byte(`<?xml version="1.0"?><gpx version="1.1"><trk><trkseg>
+<trkpt lat="0" lon="0"><time>2026-04-02T06:00:00Z</time></trkpt></trkseg></trk></gpx>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resetFlags(t, summaryCmd)
+	if _, err := run(t, "summary", gpx); err == nil || !strings.Contains(err.Error(), "no positions") {
+		t.Errorf("err %v", err)
+	}
+}

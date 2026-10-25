@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/wisborg/fitactivity/units"
+	"github.com/wisborg/output"
 
 	"github.com/spf13/cobra"
 
@@ -256,4 +257,43 @@ func jsonStravaOf(c *course.Course) *jsonStrava {
 			StartS: sg.Start.Sub(c.Start).Seconds(), ElapsedS: sg.End.Sub(sg.Start).Seconds()})
 	}
 	return j
+}
+
+// writeUnplaced is the summary of an activity with no positions -- a ride on
+// a trainer, a treadmill run -- that Strava knows: no places, as there is
+// nowhere to look up, but what Strava says about it, as it would be beside
+// the places of one outdoors.
+func writeUnplaced(cmd *cobra.Command, c *course.Course) error {
+	f := summaryOpts.format.Format
+	u, err := unitsShown(cmd, f)
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if f != output.Text {
+		doc := jsonUnplacedDoc{Sources: c.Sources, Sport: c.Sport, Title: c.Title, Description: c.Description,
+			Strava: jsonStravaOf(c), Rows: []jsonRow{}, Dropped: c.Dropped, Credits: []string{}}
+		return output.Document{Data: doc}.Write(out, f)
+	}
+	writeTitle(out, c)
+	fmt.Fprintln(out, "(no positions recorded, so no places)")
+	if summaryOpts.detailed {
+		writeStrava(out, c, u)
+	}
+	return nil
+}
+
+// jsonUnplacedDoc is an activity with no positions for JSON and YAML: a
+// summary's fields where they mean anything -- no rows, no line -- and what
+// Strava says about it.
+type jsonUnplacedDoc struct {
+	Sources     []string    `json:"sources" yaml:"sources"`
+	Sport       string      `json:"sport,omitempty" yaml:"sport,omitempty"`
+	OneLiner    string      `json:"one_liner" yaml:"one_liner"`
+	Rows        []jsonRow   `json:"rows" yaml:"rows"`
+	Title       string      `json:"title,omitempty" yaml:"title,omitempty"`
+	Description string      `json:"description,omitempty" yaml:"description,omitempty"`
+	Strava      *jsonStrava `json:"strava,omitempty" yaml:"strava,omitempty"`
+	Dropped     int         `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
+	Credits     []string    `json:"credits" yaml:"credits"`
 }

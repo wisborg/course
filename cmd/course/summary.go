@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -120,6 +121,14 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	c, err := course.ReadWith(loader(cmd, fromStrava{attach: summaryOpts.strava, gear: summaryOpts.gear}), args...)
 	if err != nil {
 		return err
+	}
+	if len(c.Points) == 0 {
+		// Nowhere to look up: what Strava says about it is all there is to
+		// say, where it says anything, and there is no store to open.
+		if c.Strava != nil {
+			return writeUnplaced(cmd, c)
+		}
+		return errors.New("the course has no positions to look up")
 	}
 	st, err := openStore(summaryOpts.store, summaryOpts.archive)
 	if err != nil {

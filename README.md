@@ -134,7 +134,11 @@ workout, commute, on a trainer, entered by hand; how hard it was -- its Relative
 perceived exertion; the gear it was done in or on, by name and the distance logged with it; the
 description; and the segments, each with when it was entered and how long it took. JSON and YAML
 carry all of it, Relative Effort as `relative_effort` (Strava's API calls it `suffer_score`).
-`--strava-gear` also asks for the gear's brand, model and description, a request more. A map's legend
+`--strava-gear` also asks for the gear's brand, model and description, a request more.
+
+An activity with no positions -- a ride on a trainer, a treadmill run -- has no places to name,
+and a summary of one alone fails as ever; with `--strava`, or as `strava:ID`, it is summarised by
+what Strava says about it instead: its title, and with `--detailed` the rest. A map's legend
 takes the title unless `--title` gives one.
 
 Nothing contacts Strava unless a command is given a `strava:` course or `--strava`, so a file
