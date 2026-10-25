@@ -142,7 +142,9 @@ what Strava says about it instead: its title, and with `--detailed` the rest. A 
 takes the title unless `--title` gives one.
 
 Nothing contacts Strava unless a command is given a `strava:` course or `--strava`, so a file
-alone never needs an application set up. What is fetched is kept for a day and then deleted,
+alone never needs an application set up. What is fetched is kept for a day, so an activity
+edited on Strava since -- gear added, a title changed -- reads as it was until `--strava-refresh`
+asks for it again; the new answer then replaces the old. What is kept is deleted after the day,
 as Strava's [API Policy](https://www.strava.com/legal/api_policy) asks, and for the same reason
 `reference add` refuses an activity on Strava: keep the file your device recorded instead. The
 Policy also forbids using Strava data in operating an AI application, putting it into one's
