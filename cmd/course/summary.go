@@ -51,6 +51,11 @@ every depth. The default, auto, takes the finest depth whose change log fits
 --max-rows rows: a local run is named street by street, and a flight falls back
 to regions and countries by itself.
 
+A flight -- a stretch faster than anything taxis -- gets a block after the
+summary: what flew, from where and which runway, its out, off, on and in times,
+its cruise levels, top speed and distance, in nautical miles, feet and knots
+unless --units or --unit say otherwise.
+
 Several files are one course, merged in the order they were recorded.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runSummary,
@@ -128,7 +133,18 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	legs, err := flightLegs(cmd.Context(), c, st, summaryOpts.language)
+	if err != nil {
+		return err
+	}
 	var all []locate.Match
+	for _, l := range legs {
+		for _, m := range []*locate.Match{l.From, l.To} {
+			if m != nil {
+				all = append(all, *m)
+			}
+		}
+	}
 	for _, r := range s.Rows {
 		all = append(all, r.Places...)
 	}
@@ -146,21 +162,28 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		writeShortfall(cmd.ErrOrStderr(), st, s)
 	}
 
-	doc := output.Document{Data: jsonSummary(c, s, credits)}
+	doc := output.Document{Data: jsonSummary(c, s, legs, credits)}
 	out := cmd.OutOrStdout()
-	if summaryOpts.format.Format == output.Text && !summaryOpts.detailed {
-		writeOneLiner(out, s, credits)
-		return nil
+	shown := unitsShown
+	if len(legs) > 0 {
+		shown = flightUnits
 	}
-	u, err := unitsShown(cmd, summaryOpts.format.Format)
+	u, err := shown(cmd, summaryOpts.format.Format)
 	if err != nil {
 		return err
+	}
+	if summaryOpts.format.Format == output.Text && !summaryOpts.detailed {
+		writeOneLiner(out, s, nil)
+		writeFlights(out, c, legs, u)
+		writeCredits(out, credits)
+		return nil
 	}
 	doc.Table = summaryTable(s, u)
 	if err := doc.Write(out, summaryOpts.format.Format); err != nil {
 		return err
 	}
 	if summaryOpts.format.Format == output.Text {
+		writeFlights(out, c, legs, u)
 		writeFooter(out, c, s, credits, u)
 	}
 	return nil
@@ -249,6 +272,11 @@ func writeOneLiner(w io.Writer, s *summary.Summary, credits []string) {
 		line = "(no named place along this course in the store)"
 	}
 	fmt.Fprintln(w, line)
+	writeCredits(w, credits)
+}
+
+// writeCredits writes the credits the one line owes, indented under it.
+func writeCredits(w io.Writer, credits []string) {
 	for _, c := range credits {
 		fmt.Fprintf(w, "  %s\n", c)
 	}
@@ -362,13 +390,14 @@ type jsonDoc struct {
 	OneLiner  string        `json:"one_liner" yaml:"one_liner"`
 	Rows      []jsonRow     `json:"rows" yaml:"rows"`
 	Finish    *jsonRow      `json:"finish,omitempty" yaml:"finish,omitempty"`
+	Flights   []jsonLeg     `json:"flights,omitempty" yaml:"flights,omitempty"`
 	Dropped   int           `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
 	Credits   []string      `json:"credits" yaml:"credits"`
 }
 
 // jsonSummary is the summary for JSON and YAML. A time or a distance the
 // course did not record is left out of each row, never written as zero.
-func jsonSummary(c *course.Course, s *summary.Summary, credits []string) jsonDoc {
+func jsonSummary(c *course.Course, s *summary.Summary, legs []legPlace, credits []string) jsonDoc {
 	conv := func(m summary.Mark, lat, lon float64, places []locate.Match) jsonRow {
 		r := jsonRow{Latitude: lat, Longitude: lon, Places: places}
 		if m.HasElapsed {
@@ -394,6 +423,9 @@ func jsonSummary(c *course.Course, s *summary.Summary, credits []string) jsonDoc
 	if f := conv(s.Finish, last.Lat, last.Lon, nil); f.ElapsedS != nil || f.DistanceM != nil {
 		f.Places = nil
 		d.Finish = &f
+	}
+	if len(legs) > 0 {
+		d.Flights = jsonFlights(c, legs)
 	}
 	if d.Credits == nil {
 		d.Credits = []string{}

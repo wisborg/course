@@ -43,6 +43,10 @@ type Course struct {
 	// than anything worked out from the trace itself.
 	HasElevationTotals        bool
 	TotalAscent, TotalDescent float64
+	// Flights are the flights a flight tracker's file says the course is
+	// of -- number, callsign, airports, aircraft -- in the order flown; see
+	// fitactivity.Track.Flights. Empty for anything else.
+	Flights []fitactivity.Flight
 }
 
 // Point is one position on a course.
@@ -60,6 +64,11 @@ type Point struct {
 
 	HasElevation bool
 	Elevation    float64
+
+	// HasSpeed reports whether the recording had a speed over the ground
+	// here, in metres a second.
+	HasSpeed bool
+	Speed    float64
 
 	// HasHeartRate reports whether the recording had a heart rate here, in
 	// beats a minute.
@@ -154,7 +163,8 @@ func Read(paths ...string) (*Course, error) {
 
 func fromTrack(t *fitactivity.Track) *Course {
 	c := &Course{Sources: t.Sources, Sport: t.Sport, Timed: true,
-		HasElevationTotals: t.HasElevationTotals, TotalAscent: t.TotalAscent, TotalDescent: t.TotalDescent}
+		HasElevationTotals: t.HasElevationTotals, TotalAscent: t.TotalAscent, TotalDescent: t.TotalDescent,
+		Flights: t.Flights}
 	timer := fitactivity.BuildTimerModel(t)
 	c.Start, _ = timer.Window()
 	var fixes []fix
@@ -167,6 +177,7 @@ func fromTrack(t *fitactivity.Track) *Course {
 			Elapsed:     timer.Elapsed(s.Time),
 			HasDistance: s.HasDistance, Distance: s.Distance,
 			HasElevation: s.HasElevation, Elevation: s.Elevation,
+			HasSpeed: s.HasSpeed, Speed: s.Speed,
 			HasHeartRate: s.HasHeartRate, HeartRate: float64(s.HeartRate),
 			HasNativePower: s.HasPower, NativePower: float64(s.Power),
 			HasCadence: s.HasCadence, Cadence: float64(s.Cadence),

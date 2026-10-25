@@ -40,6 +40,44 @@ A course reports what its file recorded and nothing else. A GPX has no distance,
 rows have none; a planned route has no times, so its rows have no elapsed time. Neither
 is estimated.
 
+## Flights
+
+A course with a flight in it -- a stretch faster than anything taxis, for long enough -- gets
+a block for each flight after the summary:
+
+```
+QF483 (QFA483) · Boeing 737-838 (B738) · VH-VXL
+  from      SYD Sydney (Kingsford Smith) Airport, runway 34R
+  to        MEL Melbourne Airport, runway 27
+  times     out 07:42:08, off 08:02:10, on 09:13:51, in 09:22:52 UTC (still moving at the last report)
+            block at least 1:40:44, air 1:11:41
+  cruise    FL340 (highest FL380)
+  speed     top 451 kn over the ground
+  distance  419.01 nm flown, 381.11 nm direct
+```
+
+The flight number, aircraft and airport codes are what a Flightradar24 KML says about itself;
+everything else is read from the track, so a phone's GPX taken on board gets a block too, with
+what it can tell. The times are pilots' out, off, on and in: the first report away from the
+stand, in the air, back on the ground and at the stand again -- each up to one report late.
+Off and on need elevations, and without them there are none. A recording that ended before
+the aircraft stopped says so, and its block time is then only a lower bound. A flight out of
+the tracker's reach for an hour over the ocean is still one flight; only slow reports end one.
+
+The runways are the ones the aircraft rolled along, from the OpenStreetMap runways in the store
+round each airport -- the same map a summary fetches to name the airports -- and the end named
+is the one it ran toward. An airport the store has no map of has no runway.
+
+Cruise is every level held for five minutes or more near the top of the flight, so a step climb
+is several levels and a level-off on the way down is none. A flight tracker's altitudes are
+pressure altitudes, so above 18,000 ft -- above every transition altitude -- they are written as
+flight levels; a GPS's are heights, and written as such. The top speed is over the ground, and
+one held across three reports, so a tracker's single report of 800 knots is not it.
+
+A flight is written in nautical miles, feet and knots, as fitdash writes one, unless `--units`
+or `--unit` say otherwise. `--format json` and `yaml` give each flight under `flights`, in metres
+and seconds, with each time's position.
+
 ## Where the places come from
 
 An [osmbase](https://github.com/wisborg/osmbase) store: `osmbase boundaries` for country,

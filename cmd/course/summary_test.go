@@ -24,7 +24,7 @@ func TestJSONLeavesOutWhatWasNotRecorded(t *testing.T) {
 		Places: []locate.Match{{Level: locate.Country, Name: "Land"}}}}}
 	row := func() (map[string]any, map[string]any) {
 		var b bytes.Buffer
-		if err := (output.Document{Data: jsonSummary(c, s, nil)}).Write(&b, output.JSON); err != nil {
+		if err := (output.Document{Data: jsonSummary(c, s, nil, nil)}).Write(&b, output.JSON); err != nil {
 			t.Fatal(err)
 		}
 		var doc map[string]any
