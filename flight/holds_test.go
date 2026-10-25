@@ -46,18 +46,17 @@ func TestHolds_TwoLapsRight(t *testing.T) {
 		t.Fatalf("got %d holds, want 1: %+v", len(hs), hs)
 	}
 	h := hs[0]
-	if h.Laps != 2 || !h.Right {
-		t.Errorf("hold of %d laps, right %v; want 2 right", h.Laps, h.Right)
+	if len(h.Laps) != 2 || !h.Right {
+		t.Errorf("hold of %d laps, right %v; want 2 right", len(h.Laps), h.Right)
 	}
-	// The hold's first turn begins at ten minutes and its last ends at
-	// seventeen: trimmed to its laps, it starts and ends within a report or
-	// two of them. The last leg inbound is the way off it, as far as the
-	// track can tell.
+	// The hold's first turn begins at ten minutes, and its second lap's
+	// leg inbound brings it back there at eighteen: it starts and ends
+	// within a report or two of them.
 	if d := h.Start.Elapsed - 10*time.Minute; d < 0 || d > 15*time.Second {
 		t.Errorf("hold starts at %v, want just after 10m", h.Start.Elapsed)
 	}
-	if d := 17*time.Minute - h.End.Elapsed; d < 0 || d > 15*time.Second {
-		t.Errorf("hold ends at %v, want just before 17m", h.End.Elapsed)
+	if d := h.End.Elapsed - 18*time.Minute; d < -15*time.Second || d > 15*time.Second {
+		t.Errorf("hold ends at %v, want about 18m", h.End.Elapsed)
 	}
 	if !h.HasLevels || h.From != 7000 || h.To != 7000 {
 		t.Errorf("hold levels %v to %v (%v), want 7000 throughout", h.From, h.To, h.HasLevels)
@@ -78,5 +77,48 @@ func TestHolds_AFlightThatOnlyTurnsHasNone(t *testing.T) {
 	c := fly(10, 20, ss...)
 	if hs := holds(c.Points, 0, len(c.Points)-1); len(hs) != 0 {
 		t.Errorf("holds %+v in a turn onto final", hs)
+	}
+}
+
+// A long lap, then one cut short -- sent off west past where it began --
+// and then vectors: a long leg west and a U-turn back the same way round.
+// The hold is the two laps; the U-turn, though it turns on the same way,
+// is not a third.
+func TestHolds_ALapCutShortEndsTheHold(t *testing.T) {
+	var ss []stretch
+	ss = append(ss, stretch{d: 5 * time.Minute, speed: 110, bearing: 0, e0: 3000, e1: 3000, every: 10 * time.Second})
+	// Lap one: a minute's turn, two minutes south, a minute's turn, two
+	// minutes north.
+	ss = append(ss, turn(0, 180, 110, 3000, time.Minute)...)
+	ss = append(ss, stretch{d: 2 * time.Minute, speed: 110, bearing: 180, e0: 3000, e1: 3000, every: 10 * time.Second})
+	ss = append(ss, turn(180, 180, 110, 3000, time.Minute)...)
+	ss = append(ss, stretch{d: 2 * time.Minute, speed: 110, bearing: 0, e0: 3000, e1: 3000, every: 10 * time.Second})
+	lapOne := 11 * time.Minute
+	// Lap two, cut short: round to the south and straight off west.
+	ss = append(ss, turn(0, 180, 110, 3000, time.Minute)...)
+	ss = append(ss, turn(180, 100, 110, 3000, 30*time.Second)...)
+	ss = append(ss, stretch{d: 3 * time.Minute, speed: 110, bearing: 280, e0: 3000, e1: 3000, every: 10 * time.Second})
+	vectors := lapOne + 90*time.Second + time.Minute
+	ss = append(ss, turn(280, 180, 110, 3000, time.Minute)...)
+	ss = append(ss, stretch{d: 2 * time.Minute, speed: 110, bearing: 100, e0: 3000, e1: 3000, every: 10 * time.Second})
+	ss = append(ss, turn(100, -90, 110, 3000, 30*time.Second)...)
+	ss = append(ss, stretch{d: 5 * time.Minute, speed: 110, bearing: 10, e0: 3000, e1: 3000, every: 10 * time.Second})
+	c := fly(10, 20, ss...)
+	hs := holds(c.Points, 0, len(c.Points)-1)
+	if len(hs) != 1 {
+		t.Fatalf("got %d holds, want 1: %+v", len(hs), hs)
+	}
+	h := hs[0]
+	if len(h.Laps) != 2 {
+		t.Fatalf("got %d laps, want 2: %+v", len(h.Laps), h.Laps)
+	}
+	if d := h.Start.Elapsed - 5*time.Minute; d < 0 || d > 15*time.Second {
+		t.Errorf("hold starts at %v, want just after 5m", h.Start.Elapsed)
+	}
+	if h.End.Elapsed >= vectors {
+		t.Errorf("hold ends at %v, into the vectors at %v", h.End.Elapsed, vectors)
+	}
+	if !(h.Laps[1].Duration() < h.Laps[0].Duration()) {
+		t.Errorf("laps of %v and %v; want the second the shorter", h.Laps[0].Duration(), h.Laps[1].Duration())
 	}
 }

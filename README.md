@@ -61,12 +61,16 @@ everything else is read from the track, so a phone's GPX taken on board gets a b
 what it can tell. The times are pilots' out, off, on and in: the first report away from the
 stand, in the air, back on the ground and at the stand again -- each up to one report late.
 Off and on need elevations, and without them there are none. A recording that ended before
-the aircraft stopped says so, and its block time is then only a lower bound. A flight out of
+the aircraft stopped says so, and its block time is then only a lower bound. Where reports
+went missing just before off or on -- a tracker often loses an aircraft over the threshold
+and finds it again on the taxiway -- the block says for how long, as that time is late by as
+much; and the same before out or in, when the aircraft was already well under way by the end. A flight out of
 the tracker's reach for an hour over the ocean is still one flight; only slow reports end one.
 
 The runways are the ones the aircraft rolled along, from the OpenStreetMap runways in the store
 round each airport -- the same map a summary fetches to name the airports -- and the end named
-is the one it ran toward. An airport the store has no map of has no runway.
+is the one it ran toward. A landing is also known by its final approach, lined up with the
+runway's centre line, so a runway is named even when the roll went unreported. An airport the store has no map of has no runway.
 
 Cruise is every level held for five minutes or more near the top of the flight, so a step climb
 is several levels and a level-off on the way down is none. A flight tracker's altitudes are
@@ -81,9 +85,17 @@ its own, said from the airport the flight landed at:
   holding   1 lap left, 06:37:15–06:45:24 UTC (8 min), FL230 to FL210, 75 nm N of SYD
 ```
 
-It is trimmed to whole laps, from where the first turn begins to where the last one ends, so
-the leg inbound after it counts as leaving. A turn onto final, half way round, is no hold; two
-U-turns the same way in quick succession are a lap, and are written as one.
+It begins where its first turn begins, and each lap ends where the track passes back by where
+the lap began -- so a lap the controller cut short, sending the aircraft off past its start, is
+a short lap, and the vectors after it are not the hold:
+
+```
+  holding   2 laps right (6 and 3 min), 09:27:31–09:36:27 UTC (9 min), 13300 ft to 8600 ft, 22 nm ESE of LHR
+```
+
+A loop that never comes back near its start is a lap once it has turned all the way round.
+A turn onto final, half way round, is no hold, and nor are the S-turns of the vectors onto it;
+two U-turns the same way in quick succession are a lap, and are written as one.
 
 A flight is written in nautical miles, feet and knots, as fitdash writes one, unless `--units`
 or `--unit` say otherwise. `--format json` and `yaml` give each flight under `flights`, in metres

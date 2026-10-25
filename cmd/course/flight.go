@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +81,10 @@ func flightUnits(cmd *cobra.Command, f output.Format) (units.Set, error) {
 	return u, nil
 }
 
+// reportGap is how long without a report before off or on is worth saying:
+// longer than a tracker's usual interval near the ground.
+const reportGap = 30 * time.Second
+
 // highestMargin is how far above the highest cruise level, in metres, the
 // highest altitude must be to be worth saying: a thousand feet, a level's
 // spacing, and not a tracker's overshoot of the level it was cleared to.
@@ -117,6 +122,28 @@ func writeFlights(w io.Writer, c *course.Course, legs []legPlace, u units.Set) {
 		times = append(times, "in "+utc(c, l.In.Elapsed))
 		line := strings.Join(times, ", ") + " UTC"
 		var notes []string
+		// A time is the first report of its event, so a tracker that lost
+		// the aircraft just before it -- over the threshold, as often as
+		// not -- puts it late by as long as it was lost. A parked aircraft
+		// is reported seldom, so before out and in a gap is only worth
+		// saying when the aircraft was well under way by the end of it.
+		for _, e := range []struct {
+			name   string
+			ev     flight.Event
+			ok     bool
+			ground bool
+		}{{"out", l.Out, !l.OutFirst, true}, {"off", l.Off, l.HasOff, false}, {"on", l.On, l.HasOn, false}, {"in", l.In, !l.InLast, true}} {
+			if !e.ok || e.ev.Index == 0 {
+				continue
+			}
+			p, q := c.Points[e.ev.Index-1], c.Points[e.ev.Index]
+			if e.ground && course.Metres(p.Lat, p.Lon, q.Lat, q.Lon) <= flight.StandReach {
+				continue
+			}
+			if gap := q.Elapsed - p.Elapsed; gap > reportGap {
+				notes = append(notes, fmt.Sprintf("no reports for %s before %s", while(gap), e.name))
+			}
+		}
 		if l.OutFirst {
 			notes = append(notes, "already moving at the first report")
 		}
@@ -167,19 +194,24 @@ func writeFlights(w io.Writer, c *course.Course, legs []legPlace, u units.Set) {
 }
 
 // holdLine is one hold: "1 lap left, 06:37:15–06:45:24 UTC (8 min), FL230
-// to FL210, 75 nm NNW of SYD". Where it was is said from where the leg
+// to FL210, 75 nm NNW of SYD", and with several laps how long each took,
+// "2 laps right (6 and 3 min)". Where it was is said from where the leg
 // landed, as a hold is placed by the approach it waits for.
 func holdLine(c *course.Course, l legPlace, h flight.Hold, code string, tracker bool, u units.Set) string {
-	laps := "1 lap"
-	if h.Laps > 1 {
-		laps = fmt.Sprintf("%d laps", h.Laps)
-	}
 	turn := "left"
 	if h.Right {
 		turn = "right"
 	}
+	laps := "1 lap " + turn
+	if n := len(h.Laps); n > 1 {
+		each := make([]string, n)
+		for i, lap := range h.Laps {
+			each[i] = strconv.Itoa(int(lap.Duration().Round(time.Minute).Minutes()))
+		}
+		laps = fmt.Sprintf("%d laps %s (%s and %s min)", n, turn, strings.Join(each[:n-1], ", "), each[n-1])
+	}
 	parts := []string{
-		laps + " " + turn,
+		laps,
 		fmt.Sprintf("%s–%s UTC (%s)", utc(c, h.Start.Elapsed), utc(c, h.End.Elapsed), minutes(h.Duration())),
 	}
 	if h.HasLevels {
@@ -205,6 +237,15 @@ func holdLine(c *course.Course, l legPlace, h flight.Hold, code string, tracker 
 	d := course.Metres(end.Lat, end.Lon, h.Lat, h.Lon)
 	parts = append(parts, fmt.Sprintf("%.0f %s %s %s", u.Distance.FromSI(d), u.Distance.Name, compassPoint(end.Lat, end.Lon, h.Lat, h.Lon), where))
 	return strings.Join(parts, ", ")
+}
+
+// while is a stretch of time without reports: "86 s", or "10 min" once
+// seconds stop meaning much.
+func while(d time.Duration) string {
+	if d < 2*time.Minute {
+		return fmt.Sprintf("%.0f s", d.Seconds())
+	}
+	return minutes(d)
 }
 
 // minutes is a duration to the nearest minute: "8 min".
@@ -303,10 +344,15 @@ type jsonEvent struct {
 	Longitude float64   `json:"longitude" yaml:"longitude"`
 }
 
+type jsonLap struct {
+	Start jsonEvent `json:"start" yaml:"start"`
+	End   jsonEvent `json:"end" yaml:"end"`
+}
+
 type jsonHold struct {
 	Start     jsonEvent `json:"start" yaml:"start"`
 	End       jsonEvent `json:"end" yaml:"end"`
-	Laps      int       `json:"laps" yaml:"laps"`
+	Laps      []jsonLap `json:"laps" yaml:"laps"`
 	Turn      string    `json:"turn" yaml:"turn"`
 	FromM     *float64  `json:"from_m,omitempty" yaml:"from_m,omitempty"`
 	ToM       *float64  `json:"to_m,omitempty" yaml:"to_m,omitempty"`
@@ -387,7 +433,10 @@ func jsonFlights(c *course.Course, legs []legPlace) []jsonLeg {
 		}
 		j.Holds = []jsonHold{}
 		for _, h := range l.Holds {
-			jh := jsonHold{Start: ev(h.Start), End: ev(h.End), Laps: h.Laps, Turn: "left", Latitude: h.Lat, Longitude: h.Lon}
+			jh := jsonHold{Start: ev(h.Start), End: ev(h.End), Laps: []jsonLap{}, Turn: "left", Latitude: h.Lat, Longitude: h.Lon}
+			for _, lap := range h.Laps {
+				jh.Laps = append(jh.Laps, jsonLap{Start: ev(lap.Start), End: ev(lap.End)})
+			}
 			if h.Right {
 				jh.Turn = "right"
 			}

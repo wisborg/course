@@ -262,3 +262,36 @@ func TestCruise_ALevelOffOnTheWayDownIsNotCruise(t *testing.T) {
 		t.Errorf("cruise %+v, want FL350 alone", got)
 	}
 }
+
+func TestLegs_TheApproachNamesTheRunwayWhenTheRollIsLost(t *testing.T) {
+	c := oneFlight()
+	legs, _ := Legs(c, nil)
+	on := c.Points[legs[0].On.Index]
+	// The tracker loses the aircraft over the threshold and finds it again
+	// on the taxiway: the roll's reports are gone.
+	var kept []course.Point
+	for i, p := range c.Points {
+		if i < legs[0].On.Index || p.Speed < FastSpeed {
+			kept = append(kept, p)
+		}
+	}
+	c.Points = kept
+	l1, l2 := on.Lat, on.Lon-300/(111_195*math.Cos(on.Lat*math.Pi/180))
+	r1, r2 := on.Lat, on.Lon+2500/(111_195*math.Cos(on.Lat*math.Pi/180))
+	find := func(lat, lon float64) ([]Runway, error) {
+		return []Runway{
+			{Ref: "08/26", Lat1: r1, Lon1: r2, Lat2: l1, Lon2: l2},
+			{Ref: "17/35", Lat1: l1 - 0.01, Lon1: l2, Lat2: l1 + 0.01, Lon2: l2},
+		}, nil
+	}
+	legs, err := Legs(c, find)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(legs) != 1 {
+		t.Fatalf("got %d legs", len(legs))
+	}
+	if u := legs[0].Landing; u == nil || u.Designator != "08" {
+		t.Errorf("landed on %+v, want 08, named by the approach", u)
+	}
+}

@@ -174,10 +174,12 @@ func Legs(c *course.Course, find Finder) ([]Leg, error) {
 	}
 	for k, r := range runs {
 		var err error
-		if legs[k].TakeOff, err = runwayUsed(pts, takeOffFixes(pts, legs[k], r), find); err != nil {
+		up := takeOffFixes(pts, legs[k], r)
+		if legs[k].TakeOff, err = runwayUsed(pts, up, up[0], runwayOverrun, find); err != nil {
 			return nil, err
 		}
-		if legs[k].Landing, err = runwayUsed(pts, landingFixes(pts, legs[k], r), find); err != nil {
+		down := landingFixes(pts, legs[k], r)
+		if legs[k].Landing, err = runwayUsed(pts, down, down[len(down)-1], finalReach, find); err != nil {
 			return nil, err
 		}
 	}
@@ -439,18 +441,25 @@ func takeOffFixes(pts []course.Point, l Leg, r [2]int) []int {
 	return out
 }
 
-// landingFixes are the fixes of the leg's landing: from the last fix in the
-// air, over the runway in the flare, to the end of the fast stretch, or its
-// last rollWindow where the course has no elevations.
+// landingFixes are the fixes of the leg's landing: the last finalWindow of
+// the approach, lined up with the runway, to the end of the fast stretch,
+// or its last rollWindow where the course has no elevations. The approach
+// is what names the runway when a tracker loses the aircraft over the
+// threshold and finds it again on a taxiway.
 func landingFixes(pts []course.Point, l Leg, r [2]int) []int {
 	var out []int
 	for i := r[0]; i <= r[1]; i++ {
-		if l.HasOn && i >= l.On.Index-1 || !l.HasOn && pts[r[1]].Elapsed-pts[i].Elapsed <= rollWindow {
+		if l.HasOn && pts[i].Elapsed >= pts[l.On.Index-1].Elapsed-finalWindow || !l.HasOn && pts[r[1]].Elapsed-pts[i].Elapsed <= rollWindow {
 			out = append(out, i)
 		}
 	}
 	return out
 }
+
+// finalWindow is how much of the approach before the last fix in the air
+// is taken as lined up with the runway: a minute and a half, a few
+// kilometres of final.
+const finalWindow = 90 * time.Second
 
 // Runway is a runway as the map draws it: its name, "16R/34L", and the ends
 // of its centre line.
@@ -473,17 +482,21 @@ const (
 	// runwayOverrun is how far past either end a fix may be and still be
 	// taken as on the runway: the lift-off and the flare.
 	runwayOverrun = 300.0
+	// finalReach is how far past either end a fix on the approach may be
+	// and be on the runway's centre line extended: the final approach.
+	finalReach = 6000.0
 )
 
 // runwayUsed is the runway the fixes ran along, and in which direction: the
-// runway near them that the most of them were on, with the designator of
-// the end the course ran toward. Nil when the map has none there, or fewer
-// than two fixes were on it.
-func runwayUsed(pts []course.Point, idx []int, find Finder) (*Use, error) {
+// runway round fix anchor that the most of them were on -- or on its centre
+// line extended up to beyond metres past either end -- with the designator
+// of the end the course ran toward. Nil when the map has none there, or
+// fewer than two fixes were on it.
+func runwayUsed(pts []course.Point, idx []int, anchor int, beyond float64, find Finder) (*Use, error) {
 	if len(idx) == 0 {
 		return nil, nil
 	}
-	p := pts[idx[0]]
+	p := pts[anchor]
 	rs, err := find(p.Lat, p.Lon)
 	if err != nil {
 		return nil, err
@@ -495,7 +508,7 @@ func runwayUsed(pts []course.Point, idx []int, find Finder) (*Use, error) {
 		length := course.Metres(r.Lat1, r.Lon1, r.Lat2, r.Lon2)
 		for _, i := range idx {
 			a, c := r.project(pts[i].Lat, pts[i].Lon)
-			if math.Abs(c) > runwayReach || a < -runwayOverrun || a > length+runwayOverrun {
+			if math.Abs(c) > runwayReach || a < -beyond || a > length+beyond {
 				continue
 			}
 			if n == 0 {
