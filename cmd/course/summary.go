@@ -31,6 +31,7 @@ var summaryOpts struct {
 	gap      float64
 	yes      bool
 	format   formatFlag
+	strava   bool
 }
 
 var summaryCmd = &cobra.Command{
@@ -56,6 +57,11 @@ summary: what flew, from where and which runway, its out, off, on and in times,
 its cruise levels, any holds, top speed and distance, in nautical miles, feet and knots
 unless --units or --unit say otherwise.
 
+With --strava, a file is given what Strava says about the activity that
+started when it did: its title, above the line; with --detailed, its page,
+description and segments; all of it in JSON and YAML. A course can also be an
+activity on Strava, strava:ID; see "course strava".
+
 Several files are one course, merged in the order they were recorded.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runSummary,
@@ -72,6 +78,7 @@ func init() {
 	f.StringVar(&summaryOpts.prefix, "prefix", "city", "what the one line names ahead of its chain: city (the city's mapped extent, or the place whose reach the course is most within), locality (the locality level's answer), or none")
 	f.BoolVar(&summaryOpts.yes, "yes", false, "fetch the map the summary needs without asking")
 	f.Float64Var(&summaryOpts.gap, "suburb-gap", summary.DefaultSuburbGap, "at street depth, how long in metres a stretch on no named way must be to be named by its suburb when the streets either side are in the same one")
+	f.BoolVar(&summaryOpts.strava, "strava", false, "give a file Strava's title, description and segments, from your activity there that started when it did; see \"course strava\"")
 	summaryOpts.format = formatFlag{Format: output.Text}
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
 	root.AddCommand(summaryCmd)
@@ -108,7 +115,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if !ok {
 		return fmt.Errorf("--prefix %q is not city, locality or none", summaryOpts.prefix)
 	}
-	c, err := course.Read(args...)
+	c, err := course.ReadWith(loader(cmd, summaryOpts.strava), args...)
 	if err != nil {
 		return err
 	}
@@ -172,6 +179,9 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if summaryOpts.format.Format == output.Text {
+		writeTitle(out, c)
+	}
 	if summaryOpts.format.Format == output.Text && !summaryOpts.detailed {
 		writeOneLiner(out, s, nil)
 		writeFlights(out, c, legs, u)
@@ -184,6 +194,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	}
 	if summaryOpts.format.Format == output.Text {
 		writeFlights(out, c, legs, u)
+		writeStrava(out, c)
 		writeFooter(out, c, s, credits, u)
 	}
 	return nil
@@ -380,19 +391,22 @@ type jsonRow struct {
 }
 
 type jsonDoc struct {
-	Sources   []string      `json:"sources" yaml:"sources"`
-	Sport     string        `json:"sport,omitempty" yaml:"sport,omitempty"`
-	Depth     locate.Level  `json:"depth" yaml:"depth"`
-	Auto      bool          `json:"depth_auto" yaml:"depth_auto"`
-	Prefix    string        `json:"prefix,omitempty" yaml:"prefix,omitempty"`
-	Departure *locate.Match `json:"departure,omitempty" yaml:"departure,omitempty"`
-	Arrival   *locate.Match `json:"arrival,omitempty" yaml:"arrival,omitempty"`
-	OneLiner  string        `json:"one_liner" yaml:"one_liner"`
-	Rows      []jsonRow     `json:"rows" yaml:"rows"`
-	Finish    *jsonRow      `json:"finish,omitempty" yaml:"finish,omitempty"`
-	Flights   []jsonLeg     `json:"flights,omitempty" yaml:"flights,omitempty"`
-	Dropped   int           `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
-	Credits   []string      `json:"credits" yaml:"credits"`
+	Sources     []string      `json:"sources" yaml:"sources"`
+	Sport       string        `json:"sport,omitempty" yaml:"sport,omitempty"`
+	Depth       locate.Level  `json:"depth" yaml:"depth"`
+	Auto        bool          `json:"depth_auto" yaml:"depth_auto"`
+	Prefix      string        `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	Departure   *locate.Match `json:"departure,omitempty" yaml:"departure,omitempty"`
+	Arrival     *locate.Match `json:"arrival,omitempty" yaml:"arrival,omitempty"`
+	OneLiner    string        `json:"one_liner" yaml:"one_liner"`
+	Rows        []jsonRow     `json:"rows" yaml:"rows"`
+	Finish      *jsonRow      `json:"finish,omitempty" yaml:"finish,omitempty"`
+	Flights     []jsonLeg     `json:"flights,omitempty" yaml:"flights,omitempty"`
+	Title       string        `json:"title,omitempty" yaml:"title,omitempty"`
+	Description string        `json:"description,omitempty" yaml:"description,omitempty"`
+	Strava      *jsonStrava   `json:"strava,omitempty" yaml:"strava,omitempty"`
+	Dropped     int           `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
+	Credits     []string      `json:"credits" yaml:"credits"`
 }
 
 // jsonSummary is the summary for JSON and YAML. A time or a distance the
@@ -427,6 +441,7 @@ func jsonSummary(c *course.Course, s *summary.Summary, legs []legPlace, credits 
 	if len(legs) > 0 {
 		d.Flights = jsonFlights(c, legs)
 	}
+	d.Title, d.Description, d.Strava = c.Title, c.Description, jsonStravaOf(c)
 	if d.Credits == nil {
 		d.Credits = []string{}
 	}

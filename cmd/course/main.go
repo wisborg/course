@@ -25,7 +25,8 @@ var root = &cobra.Command{
 	Long: `course reads a course -- a run, a ride, a flight, or a route somebody planned --
 and says where it went, or draws it on a map.
 
-A course is a FIT, GPX, TCX, KML or KMZ file. What it carries is what is
+A course is a FIT, GPX, TCX, KML or KMZ file, or an activity on Strava,
+strava:ID (see "course strava"). What it carries is what is
 reported: a GPX has no distance, a planned route has no times, and neither is
 estimated.
 

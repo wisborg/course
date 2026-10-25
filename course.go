@@ -47,6 +47,11 @@ type Course struct {
 	// of -- number, callsign, airports, aircraft -- in the order flown; see
 	// fitactivity.Track.Flights. Empty for anything else.
 	Flights []fitactivity.Flight
+	// Title and Description are what the activity was called and what was
+	// written about it, and Strava the activity on Strava, for one read
+	// from Strava or given Strava's details; see fitactivity.Track.
+	Title, Description string
+	Strava             *fitactivity.StravaActivity
 }
 
 // Point is one position on a course.
@@ -141,10 +146,23 @@ func (p Point) Temperature(src fitactivity.TemperatureSource) (float64, bool) {
 // with no elapsed time. Several files must then be one of them only, since
 // there is no clock to order a merge by.
 func Read(paths ...string) (*Course, error) {
+	return ReadWith(nil, paths...)
+}
+
+// Loader reads one source of a course as a Track: a file, or anything else
+// a program knows how to fetch -- an activity on Strava.
+type Loader func(source string) (*fitactivity.Track, error)
+
+// ReadWith reads the course in sources as Read does, each read by load, or
+// by fitactivity.Read when load is nil.
+func ReadWith(load Loader, paths ...string) (*Course, error) {
 	if len(paths) == 0 {
 		return nil, errors.New("no course given")
 	}
-	track, err := fitactivity.DecodeAll(paths...)
+	if load == nil {
+		load = fitactivity.Read
+	}
+	track, err := readAll(load, paths)
 	if err == nil {
 		return fromTrack(track), nil
 	}
@@ -161,10 +179,24 @@ func Read(paths ...string) (*Course, error) {
 	return fromRoute(route), nil
 }
 
+// readAll reads every source and merges them, as fitactivity.DecodeAll
+// does for files.
+func readAll(load Loader, paths []string) (*fitactivity.Track, error) {
+	tracks := make([]*fitactivity.Track, len(paths))
+	for i, p := range paths {
+		t, err := load(p)
+		if err != nil {
+			return nil, err
+		}
+		tracks[i] = t
+	}
+	return fitactivity.Merge(tracks...)
+}
+
 func fromTrack(t *fitactivity.Track) *Course {
 	c := &Course{Sources: t.Sources, Sport: t.Sport, Timed: true,
 		HasElevationTotals: t.HasElevationTotals, TotalAscent: t.TotalAscent, TotalDescent: t.TotalDescent,
-		Flights: t.Flights}
+		Flights: t.Flights, Title: t.Title, Description: t.Description, Strava: t.Strava}
 	timer := fitactivity.BuildTimerModel(t)
 	c.Start, _ = timer.Window()
 	var fixes []fix

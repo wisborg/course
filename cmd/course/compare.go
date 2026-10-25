@@ -71,7 +71,7 @@ func runCompare(cmd *cobra.Command, args []string) error {
 	if !(compareOpts.split > 0) {
 		return fmt.Errorf("--split must be more than 0 %s, not %v", u.Distance.Name, compareOpts.split)
 	}
-	c, err := course.Read(args...)
+	c, err := course.ReadWith(loader(cmd, false), args...)
 	if err != nil {
 		return err
 	}

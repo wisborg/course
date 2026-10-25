@@ -101,6 +101,45 @@ A flight is written in nautical miles, feet and knots, as fitdash writes one, un
 or `--unit` say otherwise. `--format json` and `yaml` give each flight under `flights`, in metres
 and seconds, with each time's position.
 
+## Strava
+
+course reads your own activities on Strava as it reads a file, through your own Strava API
+application. Register one at <https://www.strava.com/settings/api> with `localhost` as its
+Authorization Callback Domain, put its client id and secret in `~/.config/strava.yaml`:
+
+```yaml
+strava:
+  client_id: 12345
+  client_secret: 0123abcd...
+```
+
+(or in `$STRAVA_CLIENT_ID` and `$STRAVA_CLIENT_SECRET`; `--strava-config` names another file), and
+log in once:
+
+```
+./course strava login                 # allow access in the browser; the token is kept beside the file
+./course strava list --week           # this week's activities, with their ids
+./course summary strava:1234567890    # an activity on Strava, as a course
+./course summary --strava run.fit     # the watch's file, with Strava's title, description and segments
+./course strava logout                # revoke access, and forget the login and what was fetched
+```
+
+`strava:ID`, or the activity's page `https://www.strava.com/activities/ID`, is a course wherever a
+file is. What Strava keeps of the recording is less than the watch's file -- no developer fields,
+running dynamics or timer events -- so where you have the file, `--strava` on `summary` or `map`
+gives it what only Strava has instead: the title of the activity that started when the file did,
+what was written about it, and the segments it went through. The summary puts the title above
+its line; `--detailed` adds the activity's page, the description and the segments, each with
+when it was entered and how long it took, and JSON and YAML carry all of it. A map's legend
+takes the title unless `--title` gives one.
+
+Nothing contacts Strava unless a command is given a `strava:` course or `--strava`, so a file
+alone never needs an application set up. What is fetched is kept for a day and then deleted,
+as Strava's [API Policy](https://www.strava.com/legal/api_policy) asks, and for the same reason
+`reference add` refuses an activity on Strava: keep the file your device recorded instead. The
+Policy also forbids using Strava data in operating an AI application, putting it into one's
+context included.
+
 ## Where the places come from
 
 An [osmbase](https://github.com/wisborg/osmbase) store: `osmbase boundaries` for country,

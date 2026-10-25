@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +58,7 @@ var mapOpts struct {
 	heading       string
 	terrainSource string
 	terrainStore  string
+	strava        bool
 }
 
 var mapCmd = &cobra.Command{
@@ -112,7 +114,8 @@ func init() {
 	f.StringArrayVar(&mapOpts.references, "reference", nil, "a course to draw beside this one for comparison, dashed: a stored reference's name, a FIT, GPX, TCX, KML or KMZ file, or auto for every stored reference the course matched; repeat for several")
 	f.StringVar(&referencesDir, "references", "", "the directory stored references are kept in (default: course/references in your configuration directory)")
 	mapCmd.PersistentFlags().StringVar(&mapOpts.legend, "legend", "auto", "where the legend goes: top-left, top-right, bottom-left or bottom-right; auto for whichever of them covers least of the course; none for no legend; the same as --set legend.position=..., and before any --set")
-	f.StringArrayVar(&mapOpts.titles, "title", nil, "what the legend calls the course (default: its file's name); with --separate, once for each activity, in the order given")
+	f.StringArrayVar(&mapOpts.titles, "title", nil, "what the legend calls the course (default: its title on Strava, or its file's name); with --separate, once for each activity, in the order given")
+	f.BoolVar(&mapOpts.strava, "strava", false, "give a file Strava's title, from your activity there that started when it did; see \"course strava\"")
 	f.BoolVar(&mapOpts.separate, "separate", false, "draw several files as separate activities, each in its own colour with its own start and finish, rather than merged into one")
 	mapCmd.PersistentFlags().StringVar(&mapOpts.colour, "colour", "none", "colour the course by a metric along it: pace, speed, grade-adjusted-pace, elevation, grade (the slope), heart-rate, power, air-power, cadence, temperature or humidity; the same as --set colouring.by=..., and before any --set")
 	mapCmd.PersistentFlags().StringVar(&mapOpts.power, "power-source", "auto", "with --colour power, which power reading when the file carries both a footpod's (Stryd) developer field and the standard FIT power field -- \"auto\" (prefer Stryd, fall back to native), \"stryd\" or \"native\"; the two can disagree, being different sensors")
@@ -148,7 +151,8 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if err := loadFonts(mapOpts.fonts); err != nil {
 		return err
 	}
-	c, err := course.Read(args...)
+	load := loader(cmd, mapOpts.strava)
+	c, err := course.ReadWith(load, args...)
 	if err != nil {
 		return err
 	}
@@ -179,7 +183,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		}
 		activities = nil
 		for _, a := range args {
-			one, err := course.Read(a)
+			one, err := course.ReadWith(load, a)
 			if err != nil {
 				return err
 			}
@@ -190,6 +194,18 @@ func runMap(cmd *cobra.Command, args []string) error {
 		}
 		if len(activities) > 1 {
 			name = fmt.Sprintf("%d activities", len(activities))
+		}
+	}
+	// Untitled, an activity is called what it is called on Strava where
+	// it has a title there, rather than by its file's name.
+	if len(mapOpts.titles) == 0 {
+		for i, a := range activities {
+			if a.Title != "" && i < len(names) {
+				names[i] = a.Title
+			}
+		}
+		if !mapOpts.separate || len(activities) == 1 {
+			name = names[0]
 		}
 	}
 	if err := checkColour(c, colours); err != nil {
@@ -205,7 +221,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		// for each of.
 		legs = nil
 		for _, a := range args {
-			one, err := course.Read(a)
+			one, err := course.ReadWith(load, a)
 			if err != nil {
 				return err
 			}
@@ -439,6 +455,9 @@ func paletteNamed(name string) (render.Palette, render.Overlay, error) {
 // nameOf is a file's name without its directory or extension: what a course
 // read from it is called on a map.
 func nameOf(path string) string {
+	if id, ok := stravaID(path); ok {
+		return "strava-" + strconv.FormatInt(id, 10)
+	}
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
