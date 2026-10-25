@@ -16,6 +16,8 @@ import (
 	"github.com/wisborg/course"
 	"github.com/wisborg/course/match"
 	"github.com/wisborg/course/summary"
+
+	"github.com/wisborg/cobrakit/strava"
 )
 
 var matchOpts struct {
@@ -63,7 +65,7 @@ func runMatch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	c, err := course.ReadWith(loader(cmd, fromStrava{}), args...)
+	c, err := course.ReadWith(loader(cmd, strava.Fetch{}), args...)
 	if err != nil {
 		return err
 	}

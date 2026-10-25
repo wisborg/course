@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/wisborg/cobrakit/strava"
+
 	"github.com/wisborg/fitactivity"
 	fs "github.com/wisborg/fitactivity/strava"
 	"github.com/wisborg/fitactivity/units"
@@ -17,24 +19,10 @@ import (
 	"github.com/wisborg/course"
 )
 
-func TestStravaID(t *testing.T) {
-	for _, c := range []struct {
-		in string
-		id int64
-		ok bool
-	}{
-		{"strava:1234", 1234, true},
-		{"https://www.strava.com/activities/1234", 1234, true},
-		{"https://www.strava.com/activities/1234/overview", 1234, true},
-		{"strava:", 0, false},
-		{"strava:abc", 0, false},
-		{"run.fit", 0, false},
-		{"/tmp/strava:1234.fit", 0, false},
-	} {
-		if id, ok := stravaID(c.in); id != c.id || ok != c.ok {
-			t.Errorf("stravaID(%q) = %d, %v; want %d, %v", c.in, id, ok, c.id, c.ok)
-		}
-	}
+// A map of an activity on Strava is named after it without the colon its
+// source has; which sources are Strava's is cobrakit's to say, and tested
+// there.
+func TestNameOfAStravaSource(t *testing.T) {
 	if got := nameOf("strava:1234"); got != "strava-1234" {
 		t.Errorf("nameOf a Strava source is %q", got)
 	}
@@ -73,7 +61,7 @@ func TestLoader_AStravaSourceFromTheAthletesOwnActivities(t *testing.T) {
 	loggedInAt(t)
 	cmd := &cobra.Command{Use: "summary"}
 	cmd.Flags().String("strava-config", "", "")
-	c, err := course.ReadWith(loader(cmd, fromStrava{}), "strava:1001")
+	c, err := course.ReadWith(loader(cmd, strava.Fetch{}), "strava:1001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,10 +80,10 @@ func TestLoader_AFileAloneNeverAsksStrava(t *testing.T) {
 	writeLine(t, gpx, 10, 20, 0.0002, 10)
 	cmd := &cobra.Command{Use: "summary"}
 	cmd.Flags().String("strava-config", "", "")
-	if _, err := course.ReadWith(loader(cmd, fromStrava{}), gpx); err != nil {
+	if _, err := course.ReadWith(loader(cmd, strava.Fetch{}), gpx); err != nil {
 		t.Fatalf("a file without --strava: %v", err)
 	}
-	_, err := course.ReadWith(loader(cmd, fromStrava{attach: true}), gpx)
+	_, err := course.ReadWith(loader(cmd, strava.Fetch{Attach: true}), gpx)
 	if err == nil || !strings.Contains(err.Error(), "no Strava API application") {
 		t.Errorf("--strava without an application: %v", err)
 	}

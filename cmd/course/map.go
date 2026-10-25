@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -30,6 +28,8 @@ import (
 	"github.com/wisborg/course/compare"
 	"github.com/wisborg/course/match"
 	"github.com/wisborg/course/routemap"
+
+	"github.com/wisborg/cobrakit/strava"
 )
 
 var mapOpts struct {
@@ -151,7 +151,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if err := loadFonts(mapOpts.fonts); err != nil {
 		return err
 	}
-	load := loader(cmd, fromStrava{attach: mapOpts.strava})
+	load := loader(cmd, strava.Fetch{Attach: mapOpts.strava})
 	c, err := course.ReadWith(load, args...)
 	if err != nil {
 		return err
@@ -455,11 +455,7 @@ func paletteNamed(name string) (render.Palette, render.Overlay, error) {
 // nameOf is a file's name without its directory or extension: what a course
 // read from it is called on a map.
 func nameOf(path string) string {
-	if id, ok := stravaID(path); ok {
-		return "strava-" + strconv.FormatInt(id, 10)
-	}
-	base := filepath.Base(path)
-	return strings.TrimSuffix(base, filepath.Ext(base))
+	return strava.Stem(path)
 }
 
 // loadReferences reads the references to draw beside c: each one given, a

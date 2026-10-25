@@ -16,6 +16,8 @@ import (
 	"github.com/wisborg/course"
 	"github.com/wisborg/course/compare"
 	"github.com/wisborg/course/match"
+
+	"github.com/wisborg/cobrakit/strava"
 )
 
 var compareOpts struct {
@@ -71,7 +73,7 @@ func runCompare(cmd *cobra.Command, args []string) error {
 	if !(compareOpts.split > 0) {
 		return fmt.Errorf("--split must be more than 0 %s, not %v", u.Distance.Name, compareOpts.split)
 	}
-	c, err := course.ReadWith(loader(cmd, fromStrava{}), args...)
+	c, err := course.ReadWith(loader(cmd, strava.Fetch{}), args...)
 	if err != nil {
 		return err
 	}

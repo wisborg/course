@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -15,7 +13,6 @@ import (
 
 	"github.com/wisborg/cobrakit/strava"
 	"github.com/wisborg/fitactivity"
-	fs "github.com/wisborg/fitactivity/strava"
 
 	"github.com/wisborg/course"
 )
@@ -24,88 +21,13 @@ func init() {
 	strava.Add(root)
 }
 
-// stravaID is the activity a source names on Strava: strava:ID, or the
-// activity's page, https://www.strava.com/activities/ID.
-func stravaID(source string) (int64, bool) {
-	rest, ok := strings.CutPrefix(source, "strava:")
-	if !ok {
-		for _, page := range []string{"https://www.strava.com/activities/", "https://strava.com/activities/"} {
-			if rest, ok = strings.CutPrefix(source, page); ok {
-				rest, _, _ = strings.Cut(rest, "/")
-				break
-			}
-		}
-	}
-	if !ok {
-		return 0, false
-	}
-	id, err := strconv.ParseInt(rest, 10, 64)
-	return id, err == nil && id > 0
-}
-
-// fromStrava is what a command asks Strava for beyond strava: courses.
-type fromStrava struct {
-	// attach gives a file Strava's details -- title, description,
-	// segments -- from the activity that started when it did.
-	attach bool
-	// gear asks for the brand, model and description of the gear an
-	// activity was done in or on: a request more for each.
-	gear bool
-}
-
-// loader reads a command's courses: a file as fitactivity reads it, and
-// strava:ID from the athlete's own activities on Strava, with what more o
-// asks for.
-//
-// Strava is asked only for a strava: source or with o.attach, and a client
-// opened only then, so a user with no Strava application set up never meets
-// one.
-func loader(cmd *cobra.Command, o fromStrava) course.Loader {
-	var client *fs.Client
-	open := func() (*fs.Client, error) {
-		if client != nil {
-			return client, nil
-		}
-		c, err := strava.Open(cmd, cmd.ErrOrStderr())
-		if err != nil {
-			return nil, err
-		}
-		client = c
-		return c, nil
-	}
-	return func(source string) (*fitactivity.Track, error) {
-		if id, ok := stravaID(source); ok {
-			c, err := open()
-			if err != nil {
-				return nil, err
-			}
-			t, err := c.Track(cmd.Context(), id)
-			if err == nil && o.gear {
-				err = c.AddGear(cmd.Context(), t)
-			}
-			return t, strava.Explain(cmd, err)
-		}
-		t, err := fitactivity.Read(source)
-		if err != nil || !o.attach {
-			return t, err
-		}
-		c, err := open()
-		if err != nil {
-			return nil, err
-		}
-		s, err := c.Attach(cmd.Context(), t, filepath.Base(source))
-		if err != nil {
-			return nil, strava.Explain(cmd, err)
-		}
-		if s == nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "course: no Strava activity of yours started when %s did\n", source)
-		} else if o.gear {
-			if err := c.AddGear(cmd.Context(), t); err != nil {
-				return nil, strava.Explain(cmd, err)
-			}
-		}
-		return t, nil
-	}
+// loader reads a command's courses through cobrakit's strava.Loader, which
+// fitdash reads its activities through too: a file as fitactivity reads it,
+// and strava:ID from the athlete's own activities on Strava, with what more
+// f asks for. Strava is asked only for a strava: source or with f.Attach, so
+// a user with no Strava application set up never meets one.
+func loader(cmd *cobra.Command, f strava.Fetch) course.Loader {
+	return strava.Loader(cmd, fitactivity.Read, f)
 }
 
 // writeTitle writes the activity's title above its summary, where it has

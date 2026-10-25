@@ -15,6 +15,8 @@ import (
 
 	"github.com/wisborg/course/match"
 	"github.com/wisborg/course/reference"
+
+	"github.com/wisborg/cobrakit/strava"
 )
 
 var referencesDir string
@@ -56,7 +58,7 @@ average, and said so.`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		for _, a := range args[1:] {
-			if _, ok := stravaID(a); ok {
+			if _, ok := strava.ID(a); ok {
 				return fmt.Errorf("%s is an activity on Strava, and Strava's API Policy does not allow keeping its data beyond a few days; add the file your device recorded instead", a)
 			}
 		}

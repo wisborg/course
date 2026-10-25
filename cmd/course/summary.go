@@ -19,6 +19,8 @@ import (
 
 	"github.com/wisborg/course"
 	"github.com/wisborg/course/summary"
+
+	"github.com/wisborg/cobrakit/strava"
 )
 
 var summaryOpts struct {
@@ -118,7 +120,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if !ok {
 		return fmt.Errorf("--prefix %q is not city, locality or none", summaryOpts.prefix)
 	}
-	c, err := course.ReadWith(loader(cmd, fromStrava{attach: summaryOpts.strava, gear: summaryOpts.gear}), args...)
+	c, err := course.ReadWith(loader(cmd, strava.Fetch{Attach: summaryOpts.strava, Gear: summaryOpts.gear}), args...)
 	if err != nil {
 		return err
 	}
