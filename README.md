@@ -74,6 +74,17 @@ pressure altitudes, so above 18,000 ft -- above every transition altitude -- the
 flight levels; a GPS's are heights, and written as such. The top speed is over the ground, and
 one held across three reports, so a tracker's single report of 800 knots is not it.
 
+A hold -- the track going all the way round one way within twenty minutes -- gets a line of
+its own, said from the airport the flight landed at:
+
+```
+  holding   1 lap left, 06:37:15–06:45:24 UTC (8 min), FL230 to FL210, 75 nm N of SYD
+```
+
+It is trimmed to whole laps, from where the first turn begins to where the last one ends, so
+the leg inbound after it counts as leaving. A turn onto final, half way round, is no hold; two
+U-turns the same way in quick succession are a lap, and are written as one.
+
 A flight is written in nautical miles, feet and knots, as fitdash writes one, unless `--units`
 or `--unit` say otherwise. `--format json` and `yaml` give each flight under `flights`, in metres
 and seconds, with each time's position.

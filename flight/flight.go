@@ -119,6 +119,9 @@ type Leg struct {
 	// Flown is how far the course went in the air, in metres, and Direct
 	// the great circle from where it left the ground to where it landed.
 	Flown, Direct float64
+
+	// Holds are the holds flown, in order.
+	Holds []Hold
 }
 
 // Block is the time from the stand to the stand.
@@ -291,6 +294,7 @@ func (l *Leg) fly(pts []course.Point, r [2]int) {
 			l.HasTopSpeed, l.TopSpeed = true, v
 		}
 	}
+	l.Holds = holds(pts, a, b)
 	if !l.HasOff || !l.HasOn {
 		return
 	}

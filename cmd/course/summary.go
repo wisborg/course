@@ -53,7 +53,7 @@ to regions and countries by itself.
 
 A flight -- a stretch faster than anything taxis -- gets a block after the
 summary: what flew, from where and which runway, its out, off, on and in times,
-its cruise levels, top speed and distance, in nautical miles, feet and knots
+its cruise levels, any holds, top speed and distance, in nautical miles, feet and knots
 unless --units or --unit say otherwise.
 
 Several files are one course, merged in the order they were recorded.`,

@@ -154,11 +154,73 @@ func writeFlights(w io.Writer, c *course.Course, legs []legPlace, u units.Set) {
 		case l.HasHighest:
 			row("highest", "%s", level(l.Highest, tracker, u))
 		}
+		label := "holding"
+		for _, h := range l.Holds {
+			row(label, "%s", holdLine(c, l, h, code[1], tracker, u))
+			label = ""
+		}
 		if l.HasTopSpeed {
 			row("speed", "top %s over the ground", units.FormatSpeed(l.TopSpeed, u.Speed))
 		}
 		row("distance", "%s flown, %s direct", distance(l.Flown, u), distance(l.Direct, u))
 	}
+}
+
+// holdLine is one hold: "1 lap left, 06:37:15–06:45:24 UTC (8 min), FL230
+// to FL210, 75 nm NNW of SYD". Where it was is said from where the leg
+// landed, as a hold is placed by the approach it waits for.
+func holdLine(c *course.Course, l legPlace, h flight.Hold, code string, tracker bool, u units.Set) string {
+	laps := "1 lap"
+	if h.Laps > 1 {
+		laps = fmt.Sprintf("%d laps", h.Laps)
+	}
+	turn := "left"
+	if h.Right {
+		turn = "right"
+	}
+	parts := []string{
+		laps + " " + turn,
+		fmt.Sprintf("%s–%s UTC (%s)", utc(c, h.Start.Elapsed), utc(c, h.End.Elapsed), minutes(h.Duration())),
+	}
+	if h.HasLevels {
+		from := level(math.Round(h.From/flight.LevelStep)*flight.LevelStep, tracker, u)
+		to := level(math.Round(h.To/flight.LevelStep)*flight.LevelStep, tracker, u)
+		if from == to {
+			parts = append(parts, "at "+from)
+		} else {
+			parts = append(parts, from+" to "+to)
+		}
+	}
+	end := l.In
+	if l.HasOn {
+		end = l.On
+	}
+	where := "of where it landed"
+	switch {
+	case code != "":
+		where = "of " + code
+	case l.To != nil:
+		where = "of " + l.To.Name
+	}
+	d := course.Metres(end.Lat, end.Lon, h.Lat, h.Lon)
+	parts = append(parts, fmt.Sprintf("%.0f %s %s %s", u.Distance.FromSI(d), u.Distance.Name, compassPoint(end.Lat, end.Lon, h.Lat, h.Lon), where))
+	return strings.Join(parts, ", ")
+}
+
+// minutes is a duration to the nearest minute: "8 min".
+func minutes(d time.Duration) string {
+	return fmt.Sprintf("%d min", int(d.Round(time.Minute).Minutes()))
+}
+
+// compassPoint is the direction from one position to another as one of the
+// sixteen points of the compass.
+func compassPoint(lat1, lon1, lat2, lon2 float64) string {
+	points := []string{"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"}
+	rad := math.Pi / 180
+	x := (lon2 - lon1) * math.Cos((lat1+lat2)/2*rad)
+	y := lat2 - lat1
+	b := math.Mod(math.Atan2(x, y)/rad+360, 360)
+	return points[int(math.Round(b/22.5))%16]
 }
 
 // legTitle is what flew: "QF483 (QFA483) · Boeing 737-838 (B738) · VH-VXL",
@@ -241,6 +303,17 @@ type jsonEvent struct {
 	Longitude float64   `json:"longitude" yaml:"longitude"`
 }
 
+type jsonHold struct {
+	Start     jsonEvent `json:"start" yaml:"start"`
+	End       jsonEvent `json:"end" yaml:"end"`
+	Laps      int       `json:"laps" yaml:"laps"`
+	Turn      string    `json:"turn" yaml:"turn"`
+	FromM     *float64  `json:"from_m,omitempty" yaml:"from_m,omitempty"`
+	ToM       *float64  `json:"to_m,omitempty" yaml:"to_m,omitempty"`
+	Latitude  float64   `json:"latitude" yaml:"latitude"`
+	Longitude float64   `json:"longitude" yaml:"longitude"`
+}
+
 type jsonLevel struct {
 	AltitudeM float64 `json:"altitude_m" yaml:"altitude_m"`
 	HeldS     float64 `json:"held_s" yaml:"held_s"`
@@ -269,6 +342,7 @@ type jsonLeg struct {
 	TopSpeedMS    *float64      `json:"top_speed_m_s,omitempty" yaml:"top_speed_m_s,omitempty"`
 	FlownM        float64       `json:"flown_m" yaml:"flown_m"`
 	DirectM       float64       `json:"direct_m" yaml:"direct_m"`
+	Holds         []jsonHold    `json:"holds" yaml:"holds"`
 }
 
 // jsonFlights is the legs for JSON and YAML, in metres and seconds; a time
@@ -310,6 +384,18 @@ func jsonFlights(c *course.Course, legs []legPlace) []jsonLeg {
 		if l.HasTopSpeed {
 			v := l.TopSpeed
 			j.TopSpeedMS = &v
+		}
+		j.Holds = []jsonHold{}
+		for _, h := range l.Holds {
+			jh := jsonHold{Start: ev(h.Start), End: ev(h.End), Laps: h.Laps, Turn: "left", Latitude: h.Lat, Longitude: h.Lon}
+			if h.Right {
+				jh.Turn = "right"
+			}
+			if h.HasLevels {
+				from, to := h.From, h.To
+				jh.FromM, jh.ToM = &from, &to
+			}
+			j.Holds = append(j.Holds, jh)
 		}
 		out = append(out, j)
 	}

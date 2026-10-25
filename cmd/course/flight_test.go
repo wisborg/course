@@ -31,7 +31,9 @@ func TestWriteFlights(t *testing.T) {
 		Leg: flight.Leg{
 			Flight: &c.Flights[0],
 			Out:    flight.Event{Elapsed: min(10)}, In: flight.Event{Elapsed: min(100)}, InLast: true,
-			Off: flight.Event{Elapsed: min(20)}, On: flight.Event{Elapsed: min(90)}, HasOff: true, HasOn: true,
+			Off: flight.Event{Elapsed: min(20)}, On: flight.Event{Elapsed: min(90), Lat: -33.94, Lon: 151.18}, HasOff: true, HasOn: true,
+			Holds: []flight.Hold{{Start: flight.Event{Elapsed: min(70)}, End: flight.Event{Elapsed: min(78)},
+				Laps: 1, HasLevels: true, From: 7003, To: 6393, Lat: -32.69, Lon: 150.956}},
 			TakeOff: &flight.Use{Designator: "34R"},
 			Cruise:  []flight.Level{{Altitude: 34000 * 0.3048}}, HasHighest: true, Highest: 38000 * 0.3048,
 			HasTopSpeed: true, TopSpeed: 232,
@@ -48,6 +50,7 @@ XX1 (XXX1) · Test 100 (T100) · ZZ-ZZZ
   times     out 07:10:00, off 07:20:00, on 08:30:00, in 08:40:00 UTC (still moving at the last report)
             block at least 1:30:00, air 1:10:00
   cruise    FL340 (highest FL380)
+  holding   1 lap left, 08:10:00–08:18:00 UTC (8 min), FL230 to FL210, 76 nm N of BBB
   speed     top 451 kn over the ground
   distance  400.00 nm flown, 380.00 nm direct
 `
