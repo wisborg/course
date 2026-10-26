@@ -113,15 +113,26 @@ strava:
   client_secret: 0123abcd...
 ```
 
-(or in `$STRAVA_CLIENT_ID` and `$STRAVA_CLIENT_SECRET`; `--strava-config` names another file), and
-log in once:
+(or in `$STRAVA_CLIENT_ID` and `$STRAVA_CLIENT_SECRET`; `--strava-config` names another file; or in
+the system's keychain, below), and log in once:
 
 ```
-./course strava login                 # allow access in the browser; the token is kept beside the file
+./course strava login                 # allow access in the browser; the token goes in the keychain
 ./course strava list --week           # this week's activities, with their ids
 ./course summary strava:1234567890    # an activity on Strava, as a course
 ./course summary --strava run.fit     # the watch's file, with Strava's title, description and segments
 ./course strava logout                # revoke access, and forget the login and what was fetched
+```
+
+The client id and secret can be kept in the system's keychain -- the macOS Keychain, the
+Windows Credential Manager, or a Secret Service such as GNOME Keyring on Linux -- rather than in
+the file, and the login is kept there where there is one, and in `strava-token.json` beside
+`strava.yaml` where not; a login in that file from before is moved into the keychain at its
+first use. `SECRETS_STORE=file` keeps the keychain out of it.
+
+```
+./course secrets status                       # what is set, and where -- never what it is
+./course secrets set strava/client_secret     # typed unseen, or piped in from a password manager
 ```
 
 `strava:ID`, or the activity's page `https://www.strava.com/activities/ID`, is a course wherever a
