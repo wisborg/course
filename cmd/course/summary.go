@@ -21,6 +21,7 @@ import (
 	"github.com/wisborg/course/summary"
 
 	"github.com/wisborg/cobrakit/strava"
+	cw "github.com/wisborg/cobrakit/weather"
 )
 
 var summaryOpts struct {
@@ -36,6 +37,7 @@ var summaryOpts struct {
 	format   formatFlag
 	strava   bool
 	gear     bool
+	weather  cw.Options
 }
 
 var summaryCmd = &cobra.Command{
@@ -86,6 +88,10 @@ func init() {
 	f.BoolVar(&summaryOpts.gear, "strava-gear", false, "with a course from Strava, ask for its gear's brand, model and description too, shown with --detailed")
 	summaryOpts.format = formatFlag{Format: output.Text}
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
+	cw.AddFlags(f, &summaryOpts.weather, "say the weather the course was done in -- its temperatures, dew point and "+
+		"wind, and on a run what the wind, the heat and the altitude cost it -- with --detailed and in JSON and YAML. "+
+		"It is Open-Meteo's model weather, at a place every 10 km along the course, and NOTE that fetching it sends "+
+		"the area and hours of the course to open-meteo.com, once; the answer is kept under your user cache directory")
 	root.AddCommand(summaryCmd)
 }
 
@@ -124,7 +130,13 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	wx, err := resolveWeather(cmd, c)
+	if err != nil {
+		return err
+	}
 	if len(c.Points) == 0 {
+		// No position, so no weather either: said, if it was asked for.
+		cw.WriteNote(cmd.ErrOrStderr(), wx, c.Track, units.Set{}, "the summary")
 		// Nowhere to look up: what Strava says about it is all there is to
 		// say, where it says anything, and there is no store to open.
 		if c.Strava != nil {
@@ -182,7 +194,6 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		writeShortfall(cmd.ErrOrStderr(), st, s)
 	}
 
-	doc := output.Document{Data: jsonSummary(c, s, legs, credits)}
 	out := cmd.OutOrStdout()
 	shown := unitsShown
 	if len(legs) > 0 {
@@ -192,6 +203,13 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// What was sent, and the credit, on stderr whatever the format: stdout
+	// is the summary, which a script may be reading.
+	cw.WriteNote(cmd.ErrOrStderr(), wx, c.Track, u, "the summary")
+	costs, hasCosts := weatherCosts(wx, c, u)
+	data := jsonSummary(c, s, legs, credits)
+	data.Weather = cw.JSONOf(wx, c.Track, costs, hasCosts)
+	doc := output.Document{Data: data}
 	if summaryOpts.format.Format == output.Text {
 		writeTitle(out, c)
 	}
@@ -208,6 +226,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	if summaryOpts.format.Format == output.Text {
 		writeFlights(out, c, legs, u)
 		writeStrava(out, c, u)
+		writeWeather(out, wx, c, costs, hasCosts, u)
 		writeFooter(out, c, s, credits, u)
 	}
 	return nil
@@ -418,6 +437,7 @@ type jsonDoc struct {
 	Title       string        `json:"title,omitempty" yaml:"title,omitempty"`
 	Description string        `json:"description,omitempty" yaml:"description,omitempty"`
 	Strava      *jsonStrava   `json:"strava,omitempty" yaml:"strava,omitempty"`
+	Weather     *cw.JSON      `json:"weather,omitempty" yaml:"weather,omitempty"`
 	Dropped     int           `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
 	Credits     []string      `json:"credits" yaml:"credits"`
 }

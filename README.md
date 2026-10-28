@@ -161,6 +161,32 @@ as Strava's [API Policy](https://www.strava.com/legal/api_policy) asks, and for 
 Policy also forbids using Strava data in operating an AI application, putting it into one's
 context included.
 
+## Weather
+
+`summary --weather` says the weather the course was done in, as fitdash does: the range of
+temperatures, the dew point and the wind, from [Open-Meteo](https://open-meteo.com/)'s model at a
+place every 10 km along it. With `--detailed`, and in JSON and YAML, a run also gets what the wind,
+the heat and the altitude cost it, each with what it rests on:
+
+```
+./course summary --weather --detailed run.fit
+```
+
+```
+weather   15–16°C, dew point 10°C, wind 8 km/h from SSW, gusts 26 (Weather data by Open-Meteo.com)
+  the wind cost about 4 s over the run: up to +5 s/km into it and -4 s/km with it behind; …
+  the heat cost nothing: WBGT 13–14 °C in the shade, within the 7.5–15 °C races go best in
+```
+
+The wind's cost is Pugh's measure of what pushing through the air takes, at `--wind-exposure` --
+`open`, `suburban` (the default) or `urban` -- of the 10 m wind reaching the runner; the heat's,
+by the wet-bulb globe temperature in the shade, Mantzios and others' race data; the altitude's,
+above 300 m, the oxygen uptake lost there. Both of the last are for a runner not acclimatised, and
+`--acclimatised heat`, `altitude` or both leaves that cost out, since nothing published says by how
+much acclimatisation reduces them. **Fetching sends the course's area and hours to Open-Meteo**,
+once: the answer is kept under your user cache directory, and stderr says when a run sent
+anything, with the credit the data's licence asks for wherever you publish what it says.
+
 ## Where the places come from
 
 An [osmbase](https://github.com/wisborg/osmbase) store: `osmbase boundaries` for country,

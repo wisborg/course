@@ -52,6 +52,10 @@ type Course struct {
 	// from Strava or given Strava's details; see fitactivity.Track.
 	Title, Description string
 	Strava             *fitactivity.StravaActivity
+	// Track is the activity as read, every sample whole, for what needs
+	// more than the positions -- the weather's costs, which need its
+	// speeds and heights second by second; nil for a planned route.
+	Track *fitactivity.Track
 }
 
 // Point is one position on a course.
@@ -196,7 +200,7 @@ func readAll(load Loader, paths []string) (*fitactivity.Track, error) {
 func fromTrack(t *fitactivity.Track) *Course {
 	c := &Course{Sources: t.Sources, Sport: t.Sport, Timed: true,
 		HasElevationTotals: t.HasElevationTotals, TotalAscent: t.TotalAscent, TotalDescent: t.TotalDescent,
-		Flights: t.Flights, Title: t.Title, Description: t.Description, Strava: t.Strava}
+		Flights: t.Flights, Title: t.Title, Description: t.Description, Strava: t.Strava, Track: t}
 	timer := fitactivity.BuildTimerModel(t)
 	c.Start, _ = timer.Window()
 	var fixes []fix

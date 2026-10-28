@@ -163,6 +163,21 @@ Elevation                  "course map --terrain" shades the ground and draws
                            report prints the full notice for the view, which
                            whoever publishes the picture must give with it.
 
+Weather                    "course summary --weather" fetches the weather a
+                           course was done in from Open-Meteo
+                           (https://open-meteo.com/), only when asked, and
+                           Open-Meteo then learns the course's area and hours.
+                           The data are CC BY 4.0, built from ECMWF's IFS
+                           analysis (CC BY 4.0) and the ERA5 reanalysis of the
+                           Copernicus Climate Change Service: contains
+                           modified Copernicus Climate Change Service
+                           information, for which neither the European
+                           Commission nor ECMWF is responsible.  The summary
+                           gives "Weather data by Open-Meteo.com" beside the
+                           weather, and the credit with the licence for
+                           whoever publishes it.  Open-Meteo's free API is for
+                           non-commercial use.
+
 Copernicus GLO-30          The worldwide fallback under every other source.
                            Its licence asks for this notice with anything made
                            from the data, and the full notice carries it
