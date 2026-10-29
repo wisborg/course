@@ -187,6 +187,21 @@ much acclimatisation reduces them. **Fetching sends the course's area and hours 
 once: the answer is kept under your user cache directory, and stderr says when a run sent
 anything, with the credit the data's licence asks for wherever you publish what it says.
 
+With `--detailed` a table follows: the weather where the course was when it got there, every
+kilometre (or mile) on foot and every 5 on anything else, or at `--weather-every`'s spacing -- a
+distance, `2km` or `1mi`, or a duration, `30m` (minutes, so metres are given as `0.5km`) or `1h`:
+
+```
+  elapsed     km  °C  dew  humidity  wind km/h  from  gusts  head  cross  sun W/m²
+  0:00:00   0.00  10    6       76%         13   WSW     24    +8   10 L       410
+  0:28:12   5.00  11    6       71%         14   WSW     25    -3   13 R       455
+```
+
+`head` is the 10 m wind against you, negative behind, and `cross` the wind across, from your left or
+right. JSON and YAML carry the same rows, in SI units, as `weather.along`, with
+`along_every_m` or `along_every_s`; `--weather-raw` adds `weather.places`, each place's hourly
+readings as fetched.
+
 ## Where the places come from
 
 An [osmbase](https://github.com/wisborg/osmbase) store: `osmbase boundaries` for country,

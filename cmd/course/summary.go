@@ -38,6 +38,8 @@ var summaryOpts struct {
 	strava   bool
 	gear     bool
 	weather  cw.Options
+	every    string
+	raw      bool
 }
 
 var summaryCmd = &cobra.Command{
@@ -92,6 +94,12 @@ func init() {
 		"wind, and on a run what the wind, the heat and the altitude cost it -- with --detailed and in JSON and YAML. "+
 		"It is Open-Meteo's model weather, at a place every 10 km along the course (twenty spread along a longer one), and NOTE that fetching it sends "+
 		"the area and hours of the course to open-meteo.com, once; the answer is kept under your user cache directory")
+	f.StringVar(&summaryOpts.every, "weather-every", "", "with --weather, a row of the weather along the course each "+
+		"distance or duration -- 2km, 1mi, 30m (minutes), 1h -- shown with --detailed and in JSON and YAML: where and when, "+
+		"the temperature, dew point, humidity, wind, gusts, the wind as you met it, and the sunlight "+
+		"(default every km, or mile, on foot, and every 5 on anything else)")
+	f.BoolVar(&summaryOpts.raw, "weather-raw", false, "with --weather, put the weather as fetched in JSON and YAML too: "+
+		"each place's hourly readings")
 	root.AddCommand(summaryCmd)
 }
 
@@ -133,6 +141,17 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	wx, err := resolveWeather(cmd, c)
 	if err != nil {
 		return err
+	}
+	spacing, err := parseEvery(summaryOpts.every)
+	if err != nil {
+		return err
+	}
+	if !summaryOpts.weather.Weather {
+		for _, name := range []string{"weather-every", "weather-raw"} {
+			if cmd.Flags().Changed(name) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "course: --%s is only read with --weather\n", name)
+			}
+		}
 	}
 	if len(c.Points) == 0 {
 		// No position, so no weather either: said, if it was asked for.
@@ -208,7 +227,11 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	cw.WriteNote(cmd.ErrOrStderr(), wx, c.Track, u, "the summary")
 	costs, hasCosts := weatherCosts(wx, c, u)
 	data := jsonSummary(c, s, legs, credits)
-	data.Weather = cw.JSONOf(wx, c.Track, costs, hasCosts)
+	if spacing == (every{}) {
+		spacing = defaultEvery(c.Sport, u)
+	}
+	along := weatherAlong(wx.Report, c, spacing)
+	data.Weather = weatherJSON(cw.JSONOf(wx, c.Track, costs, hasCosts), along, spacing, wx.Report, summaryOpts.raw)
 	doc := output.Document{Data: data}
 	if summaryOpts.format.Format == output.Text {
 		writeTitle(out, c)
@@ -227,6 +250,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		writeFlights(out, c, legs, u)
 		writeStrava(out, c, u)
 		writeWeather(out, wx, c, costs, hasCosts, u)
+		writeWeatherAlong(out, along, u)
 		writeFooter(out, c, s, credits, u)
 	}
 	return nil
@@ -437,7 +461,7 @@ type jsonDoc struct {
 	Title       string        `json:"title,omitempty" yaml:"title,omitempty"`
 	Description string        `json:"description,omitempty" yaml:"description,omitempty"`
 	Strava      *jsonStrava   `json:"strava,omitempty" yaml:"strava,omitempty"`
-	Weather     *cw.JSON      `json:"weather,omitempty" yaml:"weather,omitempty"`
+	Weather     *jsonWeather  `json:"weather,omitempty" yaml:"weather,omitempty"`
 	Dropped     int           `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
 	Credits     []string      `json:"credits" yaml:"credits"`
 }
