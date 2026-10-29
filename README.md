@@ -165,8 +165,8 @@ context included.
 
 `summary --weather` says the weather the course was done in, as fitdash does: the range of
 temperatures, the dew point and the wind, from [Open-Meteo](https://open-meteo.com/)'s model at a
-place every 10 km along it. With `--detailed`, and in JSON and YAML, a run also gets what the wind,
-the heat and the altitude cost it, each with what it rests on:
+place every 10 km along it (twenty spread evenly along one over 190 km). With `--detailed`, and in
+JSON and YAML, a run also gets what the wind, the heat and the altitude cost it, each with what it rests on:
 
 ```
 ./course summary --weather --detailed run.fit

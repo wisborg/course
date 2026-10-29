@@ -90,7 +90,7 @@ func init() {
 	f.Var(&summaryOpts.format, "format", "output format: text, csv, json or yaml")
 	cw.AddFlags(f, &summaryOpts.weather, "say the weather the course was done in -- its temperatures, dew point and "+
 		"wind, and on a run what the wind, the heat and the altitude cost it -- with --detailed and in JSON and YAML. "+
-		"It is Open-Meteo's model weather, at a place every 10 km along the course, and NOTE that fetching it sends "+
+		"It is Open-Meteo's model weather, at a place every 10 km along the course (twenty spread along a longer one), and NOTE that fetching it sends "+
 		"the area and hours of the course to open-meteo.com, once; the answer is kept under your user cache directory")
 	root.AddCommand(summaryCmd)
 }
