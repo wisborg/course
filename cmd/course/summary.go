@@ -40,6 +40,7 @@ var summaryOpts struct {
 	weather  cw.Options
 	every    string
 	raw      bool
+	pauses   bool
 }
 
 var summaryCmd = &cobra.Command{
@@ -69,6 +70,11 @@ With --strava, a file is given what Strava says about the activity that
 started when it did: its title, above the line; with --detailed, its page,
 description and segments; all of it in JSON and YAML. A course can also be an
 activity on Strava, strava:ID; see "course strava".
+
+With --pauses, a recording's pauses are listed: when the timer stopped and
+started again, how far along the course, and how far it moved meanwhile --
+after the line, with --detailed, and in JSON and YAML. Several files merged
+are paused between them, as they are in fitdash.
 
 Several files are one course, merged in the order they were recorded.`,
 	Args: cobra.MinimumNArgs(1),
@@ -100,6 +106,8 @@ func init() {
 		"(default every km, or mile, on foot, and every 5 on anything else)")
 	f.BoolVar(&summaryOpts.raw, "weather-raw", false, "with --weather, put the weather as fetched in JSON and YAML too: "+
 		"each place's hourly readings")
+	f.BoolVar(&summaryOpts.pauses, "pauses", false, "list where the recording was paused: when the timer stopped and "+
+		"started again, by elapsed time, the timer's own and the time of day, how far along, and how far it moved meanwhile")
 	root.AddCommand(summaryCmd)
 }
 
@@ -232,6 +240,10 @@ func runSummary(cmd *cobra.Command, args []string) error {
 	}
 	along := weatherAlong(wx.Report, c, spacing)
 	data.Weather = weatherJSON(cw.JSONOf(wx, c.Track, costs, hasCosts), along, spacing, wx.Report, summaryOpts.raw)
+	paused, located := pauses(c)
+	if summaryOpts.pauses {
+		data.Pauses = pausesJSON(paused, located)
+	}
 	doc := output.Document{Data: data}
 	if summaryOpts.format.Format == output.Text {
 		writeTitle(out, c)
@@ -240,6 +252,9 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		writeOneLiner(out, s, nil)
 		writeFlights(out, c, legs, u)
 		writeCredits(out, credits)
+		if summaryOpts.pauses {
+			writePauses(out, c, paused, located, u)
+		}
 		return nil
 	}
 	doc.Table = summaryTable(s, u)
@@ -251,6 +266,9 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		writeStrava(out, c, u)
 		writeWeather(out, wx, c, costs, hasCosts, u)
 		writeWeatherAlong(out, along, u)
+		if summaryOpts.pauses {
+			writePauses(out, c, paused, located, u)
+		}
 		writeFooter(out, c, s, credits, u)
 	}
 	return nil
@@ -462,6 +480,7 @@ type jsonDoc struct {
 	Description string        `json:"description,omitempty" yaml:"description,omitempty"`
 	Strava      *jsonStrava   `json:"strava,omitempty" yaml:"strava,omitempty"`
 	Weather     *jsonWeather  `json:"weather,omitempty" yaml:"weather,omitempty"`
+	Pauses      *jsonPauses   `json:"pauses,omitempty" yaml:"pauses,omitempty"`
 	Dropped     int           `json:"rogue_fixes_left_out" yaml:"rogue_fixes_left_out"`
 	Credits     []string      `json:"credits" yaml:"credits"`
 }

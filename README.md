@@ -207,6 +207,34 @@ The weather line opens with the most significant weather met over at least a ten
 and YAML give it as `weather_code` and `sky`, with `precipitation_mm` and `cloud_cover_pct`; each
 row along the course has its own.
 
+## Pauses
+
+`summary --pauses` lists where the recording was paused, from the timer events a FIT file carries
+-- the watch stopped by hand or by auto-pause:
+
+```
+./course summary --pauses run.fit
+```
+
+```
+pauses: 2, 0:06:30 in all
+     elapsed   active    km  paused UTC  resumed UTC      for  moved
+  1  0:20:00  0:20:00  3.60    06:20:00     06:22:00  0:02:00   60 m
+  2  0:41:15  0:39:15  7.05    06:41:15     06:45:45  0:04:30    3 m
+```
+
+`elapsed` is when the timer stopped, counted from the start with earlier pauses included;
+`active` is the timer's own clock then, as the watch showed it; and `km` is how far along. `moved`
+is how far apart the fixes either side of the pause are, in a straight line -- a walk on with the
+watch stopped, or a ferry. Several files merged are paused between them, as in fitdash. The times
+of day are in UTC, since the file does not say where it was.
+
+The table follows the line, or the `--detailed` log; JSON and YAML carry it as `pauses`, with
+`timer_events`, `total_s` and each interval's `paused_at`, `resumed_at`, `duration_s`,
+`elapsed_s`, `resumed_elapsed_s`, `active_s`, `distance_m`, `resumed_distance_m`, the positions
+either side, and `moved_m`. A GPX or TCX, and an activity read from Strava, carry no timer events,
+so no pause can be located in one, and `summary` says so rather than that there were none.
+
 ## Where the places come from
 
 An [osmbase](https://github.com/wisborg/osmbase) store: `osmbase boundaries` for country,
