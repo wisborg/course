@@ -59,6 +59,10 @@ var mapOpts struct {
 	terrainSource string
 	terrainStore  string
 	strava        bool
+	mapTitle      string
+	mapSubtitle   string
+	stats         []string
+	weather       bool
 }
 
 var mapCmd = &cobra.Command{
@@ -92,6 +96,11 @@ references lie on the ground and follow it over hills. It needs the terrain,
 and offers it as --terrain does. The camera takes in the whole course; --heading
 says which way it looks, and the view settings of a style its pitch, lens and
 how much the hills are exaggerated.
+
+A band above the map can carry --map-title and --map-subtitle, --stats from
+the activity -- distance, time, pace and the like -- and with --weather an icon
+of the weather it was done in, with its temperatures and wind; the band is
+part of --height. Each is drawn only when asked for.
 
 The picture carries the map data's credit in its corner, which is what the
 data's licence asks of anything drawn from it. With terrain, the elevation's
@@ -131,6 +140,10 @@ func init() {
 	mapCmd.PersistentFlags().BoolVar(&mapOpts.contours, "contours", true, "with --terrain, draw contour lines; --contours=false for the shading alone; the same as --set map.contours=..., and before any --set")
 	f.StringVar(&mapOpts.terrainSource, "terrain-source", defaultTerrainSource, "with --terrain, where terrain the store lacks is fetched from, after asking: a host's address, or a directory of its archives")
 	f.StringVar(&mapOpts.terrainStore, "terrain-store", "", "with --terrain, where the terrain is kept (default: beside the map's store, its name ending -terrain)")
+	f.StringVar(&mapOpts.mapTitle, "map-title", "", "a title for the whole map, in a band above it; auto for the course's name, as the legend has it (--title names the course, in the legend)")
+	f.StringVar(&mapOpts.mapSubtitle, "map-subtitle", "", "a line under the map's title, in the band above the map: a date, a place, an event")
+	f.StringSliceVar(&mapOpts.stats, "stats", nil, "numbers from the activity in the band above the map, comma-separated or repeated, in the order given: auto (distance, time, pace on foot or speed otherwise, ascent and heart rate, those the course has), "+statNames()+"; power and temperature read the sensor --power-source and --temperature-source say")
+	f.BoolVar(&mapOpts.weather, "weather", false, "the weather the course was done in, in the band above the map: an icon of the most significant weather met, the temperatures, the wind and the dew point, from Open-Meteo's model as summary --weather has it; NOTE that fetching it sends the area and hours of the course to open-meteo.com, once")
 	f.StringArrayVar(&mapOpts.fonts, "font", nil, "a TrueType or OpenType font to write names in when the built-in font lacks their letters; repeat for several")
 	root.AddCommand(mapCmd)
 }
@@ -211,6 +224,18 @@ func runMap(cmd *cobra.Command, args []string) error {
 	if err := checkColour(c, colours); err != nil {
 		return err
 	}
+	// The band above the map, when one is asked for, is part of the
+	// picture's height: the map is drawn in what it leaves.
+	sources := statSources{power: powerSources[st.Colouring.PowerSource], temperature: temperatureSources[st.Colouring.TemperatureSource]}
+	hdr, err := mapHeader(cmd, c, name, set, sources, st.Palette == "dark", cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+	top := hdr.layout(st.Width, st.Text.Size, float64(max(st.Width, st.Height))/1000)
+	if err := headerRoom(top.height, st.Height); err != nil {
+		return err
+	}
+	st.Height -= top.height
 	out := mapOpts.out
 	if out == "" {
 		out = nameOf(args[0]) + ".png"
@@ -414,6 +439,7 @@ func runMap(cmd *cobra.Command, args []string) error {
 		drawLegend(img, legend, face, scale, legendPlate(img.Bounds(), size, corner, margin, credit))
 	}
 	render.DrawCredit(img, creditOf(manifest, res), face)
+	img = withHeader(img, top)
 	if err := writePNG(out, img); err != nil {
 		return err
 	}

@@ -153,8 +153,8 @@ func headingAt(c *course.Course, along []float64, i int) (float64, bool) {
 
 // writeWeatherAlong writes the rows as a table in u: where and when, the
 // temperature, dew point and humidity, the wind and where from, the gusts,
-// the wind as met -- head, and cross from the left or right -- and the
-// sunlight.
+// the wind as met -- head, and cross from the left or right -- the
+// sunlight, and the sky.
 func writeWeatherAlong(w io.Writer, rows []weatherRow, u units.Set) {
 	if len(rows) == 0 {
 		return
@@ -163,7 +163,7 @@ func writeWeatherAlong(w io.Writer, rows []weatherRow, u units.Set) {
 	v := func(ms float64) string { return fmt.Sprintf("%.0f", u.Speed.FromSI(ms)) }
 	fmt.Fprintln(w)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintf(tw, "elapsed\t%s\t%s\tdew\thumidity\twind %s\tfrom\tgusts\thead\tcross\tsun W/m²\t\n",
+	fmt.Fprintf(tw, "elapsed\t%s\t%s\tdew\thumidity\twind %s\tfrom\tgusts\thead\tcross\tsun W/m²\tsky\t\n",
 		u.Distance.Name, u.Temperature.Name, u.Speed.Name)
 	for _, r := range rows {
 		head, cross := "", ""
@@ -177,9 +177,13 @@ func writeWeatherAlong(w io.Writer, rows []weatherRow, u units.Set) {
 			}
 			cross = fmt.Sprintf("%.0f %s", u.Speed.FromSI(math.Abs(r.cross)), side)
 		}
-		fmt.Fprintf(tw, "%s\t%.2f\t%s\t%s\t%.0f%%\t%s\t%s\t%s\t%s\t%s\t%.0f\t\n",
+		sky := ""
+		if r.at.HasSky {
+			sky = fw.Describe(r.at.WeatherCode)
+		}
+		fmt.Fprintf(tw, "%s\t%.2f\t%s\t%s\t%.0f%%\t%s\t%s\t%s\t%s\t%s\t%.0f\t%s\t\n",
 			clock(r.elapsed), u.Distance.FromSI(r.distance), t(r.at.Temperature), t(r.at.DewPoint), r.at.Humidity,
-			v(r.at.WindSpeed), fw.Compass(r.at.WindFrom), v(r.at.Gusts), head, cross, r.at.Radiation)
+			v(r.at.WindSpeed), fw.Compass(r.at.WindFrom), v(r.at.Gusts), head, cross, r.at.Radiation, sky)
 	}
 	tw.Flush()
 	fmt.Fprintln(w, "  the wind at 10 m in the open: head is against you, negative behind; cross is from your left or right")
@@ -196,11 +200,24 @@ type jsonConditions struct {
 	GustsMS      float64   `json:"gusts_ms" yaml:"gusts_ms"`
 	PressureHPa  float64   `json:"pressure_hpa" yaml:"pressure_hpa"`
 	RadiationWM2 float64   `json:"radiation_w_m2" yaml:"radiation_w_m2"`
+	// The sky, where the hour had one: its WMO code and in words, what
+	// fell over the hour before, in mm, the cloud cover, and whether it was
+	// day.
+	WeatherCode     *int     `json:"weather_code,omitempty" yaml:"weather_code,omitempty"`
+	Sky             string   `json:"sky,omitempty" yaml:"sky,omitempty"`
+	PrecipitationMM *float64 `json:"precipitation_mm,omitempty" yaml:"precipitation_mm,omitempty"`
+	CloudCoverPct   *float64 `json:"cloud_cover_pct,omitempty" yaml:"cloud_cover_pct,omitempty"`
+	Day             *bool    `json:"day,omitempty" yaml:"day,omitempty"`
 }
 
 func conditionsJSON(c fw.Conditions) jsonConditions {
-	return jsonConditions{Time: c.Time.UTC(), TemperatureC: c.Temperature, DewPointC: c.DewPoint, HumidityPct: c.Humidity,
+	j := jsonConditions{Time: c.Time.UTC(), TemperatureC: c.Temperature, DewPointC: c.DewPoint, HumidityPct: c.Humidity,
 		WindSpeedMS: c.WindSpeed, WindFromDeg: c.WindFrom, GustsMS: c.Gusts, PressureHPa: c.Pressure, RadiationWM2: c.Radiation}
+	if c.HasSky {
+		code, rain, cloud, day := c.WeatherCode, c.Precipitation, c.CloudCover, c.IsDay
+		j.WeatherCode, j.Sky, j.PrecipitationMM, j.CloudCoverPct, j.Day = &code, fw.Describe(code), &rain, &cloud, &day
+	}
+	return j
 }
 
 // jsonWeatherRow is a weatherRow for JSON and YAML; the wind as met is

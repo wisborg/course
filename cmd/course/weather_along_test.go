@@ -51,7 +51,8 @@ func line(d time.Duration) (*course.Course, *fw.Report) {
 	var hours []fw.Conditions
 	for h := 0; h <= int(d.Hours())+1; h++ {
 		hours = append(hours, fw.Conditions{Time: t0.Add(time.Duration(h) * time.Hour), Temperature: 10 + 6*float64(h),
-			DewPoint: 5, Humidity: 70, WindSpeed: 5, WindFrom: 0, Gusts: 9, Pressure: 1013, Radiation: 300})
+			DewPoint: 5, Humidity: 70, WindSpeed: 5, WindFrom: 0, Gusts: 9, Pressure: 1013, Radiation: 300,
+			HasSky: true, WeatherCode: 61, Precipitation: 0.4, CloudCover: 90, IsDay: true})
 	}
 	return c, &fw.Report{Places: []fw.Place{{Lat: 10, Lon: 20, Elevation: 40, Hours: hours}}}
 }
@@ -96,7 +97,7 @@ func TestWriteWeatherAlong(t *testing.T) {
 	}
 	var b strings.Builder
 	writeWeatherAlong(&b, weatherAlong(r, c, every{metres: 2000}), m)
-	for _, want := range []string{"km/h", "0:40:00", "7.20", "14", "70%", "N", "+18", "0 R", "300"} {
+	for _, want := range []string{"km/h", "0:40:00", "7.20", "14", "70%", "N", "+18", "0 R", "300", "light rain"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("lacks %q:\n%s", want, b.String())
 		}
@@ -113,7 +114,7 @@ func TestWeatherJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"temperature_min_c":10`, `"along_every_s":900`, `"along":[`, `"headwind_ms":5`} {
+	for _, want := range []string{`"temperature_min_c":10`, `"along_every_s":900`, `"along":[`, `"headwind_ms":5`, `"sky":"light rain"`, `"precipitation_mm":0.4`, `"day":true`} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("json lacks %s: %s", want, data)
 		}

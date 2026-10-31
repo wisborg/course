@@ -193,14 +193,19 @@ distance, `2km` or `1mi`, or a duration, `30m` (minutes, so metres are given as 
 
 ```
   elapsed     km  °C  dew  humidity  wind km/h  from  gusts  head  cross  sun W/m²
-  0:00:00   0.00  10    6       76%         13   WSW     24    +8   10 L       410
-  0:28:12   5.00  11    6       71%         14   WSW     25    -3   13 R       455
+  0:00:00   0.00  10    6       76%         13   WSW     24    +8   10 L       410  overcast
+  0:28:12   5.00  11    6       71%         14   WSW     25    -3   13 R       455  light rain
 ```
 
 `head` is the 10 m wind against you, negative behind, and `cross` the wind across, from your left or
 right. JSON and YAML carry the same rows, in SI units, as `weather.along`, with
 `along_every_m` or `along_every_s`; `--weather-raw` adds `weather.places`, each place's hourly
 readings as fetched.
+
+The weather line opens with the most significant weather met over at least a tenth of the course
+-- an hour's rain in a marathon, not a minute's -- from Open-Meteo's WMO weather codes, and JSON
+and YAML give it as `weather_code` and `sky`, with `precipitation_mm` and `cloud_cover_pct`; each
+row along the course has its own.
 
 ## Where the places come from
 
@@ -379,6 +384,28 @@ even on a map with nothing else in it.
 ```
 ./course map hike.fit --colour grade --title "Oia to Fira" --legend bottom-left
 ```
+
+### The header
+
+A band above the map can carry a title and a subtitle for the whole map, numbers from the activity
+and the weather it was done in, each only when asked for. The band is part of `--height`: the map
+is drawn in what it leaves.
+
+```
+./course map marathon.fit --map-title "Boston Marathon" --map-subtitle "20 April 2026" \
+    --stats auto,power --weather
+```
+
+`--map-title auto` takes the course's name, as the legend has it; `--title` still names the course
+in the legend. `--stats` takes the numbers in the order given: `distance`, `time`, `moving-time`,
+`pace`, `speed`, `ascent`, `descent`, `heart-rate`, `max-heart-rate`, `power`, `cadence` and
+`temperature`, or `auto` for distance, time, pace on foot or speed otherwise, ascent and heart rate,
+those the course has. Pace and speed are over the time spent moving, a stop left out; power and
+temperature read the sensor `--power-source` and `--temperature-source` say. `--weather` adds an
+icon of the most significant weather met -- clear, partly cloudy, overcast, fog, drizzle, rain,
+snow or a thunderstorm, by day or night -- with the temperatures, the wind and the dew point, as
+`summary --weather` says them, and the data's credit. **Fetching it sends the course's area and
+hours to Open-Meteo**, once, as summary's does.
 
 ### Colouring by a metric along the course
 
